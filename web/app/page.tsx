@@ -39,6 +39,16 @@ function todayMakassar() {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
+function productiveMinutes(data: DashboardData) {
+  return data.activities
+    .filter((item) => String(item.category_name || "").toLowerCase() !== "istirahat")
+    .reduce((sum, item) => sum + Math.max(0, Number(item.duration_minutes || 0)), 0);
+}
+
+function activeHabitIds(data: DashboardData) {
+  return new Set(data.habits.filter((item) => item.is_active && !item.deleted_at).map((item) => item.id));
+}
+
 function calculateScore(data: DashboardData) {
   const focusDone = data.focus.filter((item) => item.status === "COMPLETED").length;
   const focusScore = data.focus.length ? (focusDone / data.focus.length) * 40 : 0;
@@ -46,15 +56,15 @@ function calculateScore(data: DashboardData) {
   const taskDone = data.tasks.filter((item) => item.status === "DONE").length;
   const taskScore = data.tasks.length ? (taskDone / data.tasks.length) * 20 : 0;
 
-  const minutes = data.activities.reduce((sum, item) => sum + Number(item.duration_minutes || 0), 0);
-  const target = Number(data.profile?.target_focus_minutes || 120);
-  const timeScore = Math.min(1, target > 0 ? minutes / target : 0) * 20;
+  const minutes = productiveMinutes(data);
+  const target = Math.max(15, Number(data.profile?.target_focus_minutes || 120));
+  const timeScore = Math.min(1, minutes / target) * 20;
 
-  const activeHabitIds = new Set(data.habits.filter((item) => item.is_active && !item.deleted_at).map((item) => item.id));
-  const doneHabits = data.habitEntries.filter((item) => item.completed && activeHabitIds.has(item.habit_id)).length;
-  const habitScore = activeHabitIds.size ? (doneHabits / activeHabitIds.size) * 20 : 0;
+  const habitIds = activeHabitIds(data);
+  const doneHabits = data.habitEntries.filter((item) => item.completed && habitIds.has(item.habit_id)).length;
+  const habitScore = habitIds.size ? (Math.min(doneHabits, habitIds.size) / habitIds.size) * 20 : 0;
 
-  return Math.max(0, Math.min(100, Math.round(focusScore + taskScore + timeScore + habitScore)));
+  return Math.max(0, Math.min(100, Math.floor(focusScore + taskScore + timeScore + habitScore)));
 }
 
 function statusClass(status: string) {
@@ -92,9 +102,7 @@ export default function Home() {
     ]);
 
     const firstError = [profile.error, focus.error, tasks.error, activities.error, habits.error, habitEntries.error, review.error, devices.error, syncEvents.error].find(Boolean);
-    if (firstError) {
-      setError(firstError.message);
-    }
+    if (firstError) setError(firstError.message);
 
     setData({
       profile: profile.data,
@@ -155,8 +163,9 @@ export default function Home() {
   const score = calculateScore(data);
   const focusDone = data.focus.filter((x) => x.status === "COMPLETED").length;
   const taskDone = data.tasks.filter((x) => x.status === "DONE").length;
-  const minutes = data.activities.reduce((sum, x) => sum + Number(x.duration_minutes || 0), 0);
-  const habitsDone = data.habitEntries.filter((x) => x.completed).length;
+  const minutes = productiveMinutes(data);
+  const habitIds = activeHabitIds(data);
+  const habitsDone = data.habitEntries.filter((x) => x.completed && habitIds.has(x.habit_id)).length;
 
   return (
     <main className="dashboard-shell">
@@ -175,15 +184,11 @@ export default function Home() {
       {error && <p className="error-box">{error}</p>}
 
       <section className="hero-grid">
-        <article className="score-card">
-          <span>Daily Score</span>
-          <strong>{score}</strong>
-          <small>/ 100</small>
-        </article>
+        <article className="score-card"><span>Daily Score</span><strong>{score}</strong><small>/ 100</small></article>
         <article className="metric-card"><span>Fokus</span><strong>{focusDone}/{data.focus.length}</strong><small>selesai</small></article>
         <article className="metric-card"><span>Tugas</span><strong>{taskDone}/{data.tasks.length}</strong><small>selesai</small></article>
         <article className="metric-card"><span>Waktu produktif</span><strong>{minutes}</strong><small>menit</small></article>
-        <article className="metric-card"><span>Habit hari ini</span><strong>{habitsDone}/{data.habits.length}</strong><small>check-in</small></article>
+        <article className="metric-card"><span>Habit hari ini</span><strong>{habitsDone}/{habitIds.size}</strong><small>check-in</small></article>
         <article className="metric-card"><span>Perangkat</span><strong>{data.devices.length}</strong><small>terdaftar</small></article>
       </section>
 
