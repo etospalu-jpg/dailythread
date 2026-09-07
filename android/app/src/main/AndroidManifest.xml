@@ -6,6 +6,7 @@
     <application
         android:name=".DailyThreadApp"
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:label="Daily Thread"
         android:supportsRtl="true"
         android:theme="@style/Theme.DailyThread">
