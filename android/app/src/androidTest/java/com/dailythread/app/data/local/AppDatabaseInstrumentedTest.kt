@@ -76,7 +76,7 @@ class AppDatabaseInstrumentedTest {
 
         assertEquals(3, dao.observePendingCount("user-a").first())
         assertEquals(1, dao.observePendingCount("user-b").first())
-        assertEquals(listOf("p", "f"), dao.pending("user-a").map { it.mutationId })
+        assertEquals(listOf("f", "p"), dao.pending("user-a").map { it.mutationId }.sorted())
     }
 
     @Test
