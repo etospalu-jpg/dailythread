@@ -23,8 +23,23 @@ data class SyncMutationDto(
     val payload: JsonObject
 )
 
-data class PushRequest(val action: String = "push", val mutations: List<SyncMutationDto>)
-data class PullRequest(val action: String = "pull", val cursor: Long, @SerializedName("device_id") val deviceId: String?, val limit: Int = 200)
+data class PushRequest(
+    val action: String = "push",
+    @SerializedName("device_id") val deviceId: String?,
+    @SerializedName("device_name") val deviceName: String?,
+    @SerializedName("app_version") val appVersion: String?,
+    val mutations: List<SyncMutationDto>
+)
+
+data class PullRequest(
+    val action: String = "pull",
+    val cursor: Long,
+    @SerializedName("device_id") val deviceId: String?,
+    @SerializedName("device_name") val deviceName: String?,
+    @SerializedName("app_version") val appVersion: String?,
+    val limit: Int = 200
+)
+
 data class PushResult(
     @SerializedName("mutation_id") val mutationId: String,
     val status: String,
