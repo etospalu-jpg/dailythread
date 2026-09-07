@@ -41,6 +41,12 @@ function cleanPayload(payload: unknown) {
   return result;
 }
 
+function optionalString(value: unknown, max = 120): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text ? text.slice(0, max) : null;
+}
+
 async function currentUser(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -54,14 +60,25 @@ async function currentUser(req: Request) {
   return data.user;
 }
 
-async function touchDevice(userId: string, deviceId: string | null) {
+async function touchDevice(
+  userId: string,
+  deviceId: string | null,
+  deviceName?: string | null,
+  appVersion?: string | null,
+) {
   if (!deviceId) return;
-  await admin.from("devices").upsert({
+  const row: Record<string, unknown> = {
     id: deviceId,
     user_id: userId,
     platform: "android",
     last_seen_at: new Date().toISOString(),
-  }, { onConflict: "id" });
+  };
+  const safeName = optionalString(deviceName, 120);
+  const safeVersion = optionalString(appVersion, 40);
+  if (safeName) row.name = safeName;
+  if (safeVersion) row.app_version = safeVersion;
+  const { error } = await admin.from("devices").upsert(row, { onConflict: "id" });
+  if (error) console.error("device_upsert_failed", error.message);
 }
 
 async function recordSyncEvent(input: {
@@ -107,8 +124,6 @@ async function processMutation(userId: string, mutation: any) {
   if (!mutationId || !table || !entityId || !["CREATE", "UPDATE", "DELETE"].includes(operation)) {
     return { mutation_id: mutationId, status: "FAILED", error: "invalid_mutation" };
   }
-
-  await touchDevice(userId, deviceId);
 
   const { data: already } = await admin
     .from("sync_mutations")
@@ -261,11 +276,18 @@ Deno.serve(async (req: Request) => {
 
   const action = String(body?.action || "").toLowerCase();
   const started = performance.now();
-  const deviceId = body?.device_id ? String(body.device_id) : null;
+  const mutations = Array.isArray(body?.mutations) ? body.mutations.slice(0, 100) : [];
+  const deviceId = body?.device_id
+    ? String(body.device_id)
+    : mutations[0]?.device_id
+      ? String(mutations[0].device_id)
+      : null;
+  const deviceName = optionalString(body?.device_name, 120);
+  const appVersion = optionalString(body?.app_version, 40);
 
   try {
     if (action === "push") {
-      const mutations = Array.isArray(body?.mutations) ? body.mutations.slice(0, 100) : [];
+      await touchDevice(user.id, deviceId, deviceName, appVersion);
       const results = [];
       for (const mutation of mutations) results.push(await processMutation(user.id, mutation));
 
@@ -276,7 +298,7 @@ Deno.serve(async (req: Request) => {
 
       await recordSyncEvent({
         userId: user.id,
-        deviceId: deviceId || (mutations[0]?.device_id ? String(mutations[0].device_id) : null),
+        deviceId,
         direction: "PUSH",
         status,
         mutationCount: mutations.length,
@@ -291,7 +313,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "pull") {
-      await touchDevice(user.id, deviceId);
+      await touchDevice(user.id, deviceId, deviceName, appVersion);
       const cursorFrom = Math.max(0, Number(body?.cursor || 0));
       const result = await pullChanges(user.id, cursorFrom, Number(body?.limit || 200));
       await recordSyncEvent({
