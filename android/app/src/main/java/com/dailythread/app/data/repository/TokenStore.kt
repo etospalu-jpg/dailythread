@@ -17,12 +17,15 @@ class TokenStore(private val context: Context) {
     private val refreshKey = stringPreferencesKey("refresh_token")
     private val userKey = stringPreferencesKey("user_id")
     private val expiresAtKey = longPreferencesKey("expires_at_ms")
+    private val cipher = TokenCipher()
 
     suspend fun save(access: String, refresh: String, userId: String, expiresInSeconds: Long) {
         val expiresAt = System.currentTimeMillis() + (expiresInSeconds * 1000L)
+        val encryptedAccess = cipher.encrypt(access)
+        val encryptedRefresh = cipher.encrypt(refresh)
         context.dataStore.edit {
-            it[accessKey] = access
-            it[refreshKey] = refresh
+            it[accessKey] = encryptedAccess
+            it[refreshKey] = encryptedRefresh
             it[userKey] = userId
             it[expiresAtKey] = expiresAt
         }
@@ -32,10 +35,15 @@ class TokenStore(private val context: Context) {
         .map { it[userKey] }
         .distinctUntilChanged()
 
-    suspend fun accessToken(): String? = context.dataStore.data.first()[accessKey]
-    suspend fun refreshToken(): String? = context.dataStore.data.first()[refreshKey]
+    suspend fun accessToken(): String? = decryptStored(context.dataStore.data.first()[accessKey])
+    suspend fun refreshToken(): String? = decryptStored(context.dataStore.data.first()[refreshKey])
     suspend fun userId(): String? = context.dataStore.data.first()[userKey]
     suspend fun expiresAtMs(): Long = context.dataStore.data.first()[expiresAtKey] ?: 0L
     suspend fun hasOfflineSession(): Boolean = userId() != null
     suspend fun clear() = context.dataStore.edit { it.clear() }
+
+    private fun decryptStored(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        return runCatching { cipher.decrypt(value) }.getOrNull()
+    }
 }
