@@ -6,135 +6,81 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FocusDao {
-    @Query("SELECT * FROM focus_items WHERE userId=:userId AND focusDate=:date AND deletedAt IS NULL ORDER BY sortOrder, createdAt")
-    fun observeForDate(userId: String, date: String): Flow<List<FocusEntity>>
-
-    @Query("SELECT * FROM focus_items WHERE userId=:userId AND focusDate=:date AND deletedAt IS NULL ORDER BY sortOrder, createdAt")
-    suspend fun forDate(userId: String, date: String): List<FocusEntity>
-
-    @Query("SELECT * FROM focus_items WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): FocusEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: FocusEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(items: List<FocusEntity>)
+    @Query("SELECT * FROM focus_items WHERE userId=:userId AND focusDate=:date AND deletedAt IS NULL ORDER BY sortOrder, createdAt") fun observeForDate(userId: String, date: String): Flow<List<FocusEntity>>
+    @Query("SELECT * FROM focus_items WHERE userId=:userId AND focusDate BETWEEN :startDate AND :endDate AND deletedAt IS NULL ORDER BY focusDate, sortOrder, createdAt") fun observeRange(userId: String, startDate: String, endDate: String): Flow<List<FocusEntity>>
+    @Query("SELECT * FROM focus_items WHERE userId=:userId AND focusDate=:date AND deletedAt IS NULL ORDER BY sortOrder, createdAt") suspend fun forDate(userId: String, date: String): List<FocusEntity>
+    @Query("SELECT * FROM focus_items WHERE id=:id LIMIT 1") suspend fun byId(id: String): FocusEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: FocusEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertAll(items: List<FocusEntity>)
+    @Query("UPDATE focus_items SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks WHERE userId=:userId AND scheduledDate=:date AND deletedAt IS NULL ORDER BY CASE priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, createdAt")
-    fun observeForDate(userId: String, date: String): Flow<List<TaskEntity>>
-
-    @Query("SELECT * FROM tasks WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): TaskEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: TaskEntity)
+    @Query("SELECT * FROM tasks WHERE userId=:userId AND scheduledDate=:date AND deletedAt IS NULL ORDER BY CASE priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, createdAt") fun observeForDate(userId: String, date: String): Flow<List<TaskEntity>>
+    @Query("SELECT * FROM tasks WHERE userId=:userId AND scheduledDate BETWEEN :startDate AND :endDate AND deletedAt IS NULL ORDER BY scheduledDate, createdAt") fun observeRange(userId: String, startDate: String, endDate: String): Flow<List<TaskEntity>>
+    @Query("SELECT * FROM tasks WHERE id=:id LIMIT 1") suspend fun byId(id: String): TaskEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: TaskEntity)
+    @Query("UPDATE tasks SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface ActivityDao {
-    @Query("SELECT * FROM activities WHERE userId=:userId AND activityDate=:date AND deletedAt IS NULL ORDER BY startedAt DESC")
-    fun observeForDate(userId: String, date: String): Flow<List<ActivityEntity>>
-
-    @Query("SELECT * FROM activities WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): ActivityEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: ActivityEntity)
+    @Query("SELECT * FROM activities WHERE userId=:userId AND activityDate=:date AND deletedAt IS NULL ORDER BY startedAt DESC") fun observeForDate(userId: String, date: String): Flow<List<ActivityEntity>>
+    @Query("SELECT * FROM activities WHERE userId=:userId AND activityDate BETWEEN :startDate AND :endDate AND deletedAt IS NULL ORDER BY activityDate, startedAt") fun observeRange(userId: String, startDate: String, endDate: String): Flow<List<ActivityEntity>>
+    @Query("SELECT * FROM activities WHERE id=:id LIMIT 1") suspend fun byId(id: String): ActivityEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: ActivityEntity)
+    @Query("UPDATE activities SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface HabitDao {
-    @Query("SELECT * FROM habits WHERE userId=:userId AND isActive=1 AND deletedAt IS NULL ORDER BY createdAt")
-    fun observeActive(userId: String): Flow<List<HabitEntity>>
-
-    @Query("SELECT * FROM habits WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): HabitEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: HabitEntity)
+    @Query("SELECT * FROM habits WHERE userId=:userId AND isActive=1 AND deletedAt IS NULL ORDER BY createdAt") fun observeActive(userId: String): Flow<List<HabitEntity>>
+    @Query("SELECT * FROM habits WHERE id=:id LIMIT 1") suspend fun byId(id: String): HabitEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: HabitEntity)
+    @Query("UPDATE habits SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface HabitEntryDao {
-    @Query("SELECT * FROM habit_entries WHERE userId=:userId AND entryDate=:date AND deletedAt IS NULL")
-    fun observeForDate(userId: String, date: String): Flow<List<HabitEntryEntity>>
-
-    @Query("SELECT * FROM habit_entries WHERE habitId=:habitId AND entryDate=:date AND deletedAt IS NULL LIMIT 1")
-    suspend fun forHabitDate(habitId: String, date: String): HabitEntryEntity?
-
-    @Query("SELECT * FROM habit_entries WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): HabitEntryEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: HabitEntryEntity)
+    @Query("SELECT * FROM habit_entries WHERE userId=:userId AND entryDate=:date AND deletedAt IS NULL") fun observeForDate(userId: String, date: String): Flow<List<HabitEntryEntity>>
+    @Query("SELECT * FROM habit_entries WHERE userId=:userId AND entryDate BETWEEN :startDate AND :endDate AND deletedAt IS NULL ORDER BY entryDate") fun observeRange(userId: String, startDate: String, endDate: String): Flow<List<HabitEntryEntity>>
+    @Query("SELECT * FROM habit_entries WHERE habitId=:habitId AND entryDate=:date AND deletedAt IS NULL LIMIT 1") suspend fun forHabitDate(habitId: String, date: String): HabitEntryEntity?
+    @Query("SELECT * FROM habit_entries WHERE id=:id LIMIT 1") suspend fun byId(id: String): HabitEntryEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: HabitEntryEntity)
+    @Query("UPDATE habit_entries SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface ReviewDao {
-    @Query("SELECT * FROM daily_reviews WHERE userId=:userId AND reviewDate=:date AND deletedAt IS NULL ORDER BY updatedAt DESC LIMIT 1")
-    fun observeForDate(userId: String, date: String): Flow<ReviewEntity?>
-
-    @Query("SELECT * FROM daily_reviews WHERE userId=:userId AND reviewDate=:date AND deletedAt IS NULL ORDER BY updatedAt DESC LIMIT 1")
-    suspend fun forDate(userId: String, date: String): ReviewEntity?
-
-    @Query("SELECT * FROM daily_reviews WHERE id=:id LIMIT 1")
-    suspend fun byId(id: String): ReviewEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(item: ReviewEntity)
+    @Query("SELECT * FROM daily_reviews WHERE userId=:userId AND reviewDate=:date AND deletedAt IS NULL ORDER BY updatedAt DESC LIMIT 1") fun observeForDate(userId: String, date: String): Flow<ReviewEntity?>
+    @Query("SELECT * FROM daily_reviews WHERE userId=:userId AND reviewDate BETWEEN :startDate AND :endDate AND deletedAt IS NULL ORDER BY reviewDate") fun observeRange(userId: String, startDate: String, endDate: String): Flow<List<ReviewEntity>>
+    @Query("SELECT * FROM daily_reviews WHERE userId=:userId AND reviewDate=:date AND deletedAt IS NULL ORDER BY updatedAt DESC LIMIT 1") suspend fun forDate(userId: String, date: String): ReviewEntity?
+    @Query("SELECT * FROM daily_reviews WHERE id=:id LIMIT 1") suspend fun byId(id: String): ReviewEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: ReviewEntity)
+    @Query("UPDATE daily_reviews SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface OutboxDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun enqueue(item: OutboxMutationEntity)
-
-    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED') ORDER BY createdAt LIMIT :limit")
-    suspend fun pending(userId: String, limit: Int = 100): List<OutboxMutationEntity>
-
-    @Query("SELECT * FROM outbox_mutations WHERE mutationId=:id LIMIT 1")
-    suspend fun byId(id: String): OutboxMutationEntity?
-
-    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state='CONFLICT' ORDER BY createdAt")
-    fun observeConflicts(userId: String): Flow<List<OutboxMutationEntity>>
-
-    @Query("UPDATE outbox_mutations SET state=:state, lastError=:error, attempts=attempts+1 WHERE mutationId=:id")
-    suspend fun mark(id: String, state: String, error: String? = null)
-
-    @Query("UPDATE outbox_mutations SET state='CONFLICT', lastError=:error, attempts=attempts+1, serverVersion=:serverVersion, serverPayloadJson=:serverPayloadJson WHERE mutationId=:id")
-    suspend fun markConflict(id: String, error: String?, serverVersion: Long?, serverPayloadJson: String?)
-
-    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, baseVersion=:serverVersion, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id")
-    suspend fun retryAgainstVersion(id: String, serverVersion: Long)
-
-    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, operation='CREATE', baseVersion=0, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id")
-    suspend fun retryAsCreate(id: String)
-
-    @Query("DELETE FROM outbox_mutations WHERE mutationId=:id")
-    suspend fun delete(id: String)
-
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED','CONFLICT')")
-    fun observePendingCount(userId: String): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')")
-    fun observePushableCount(userId: String): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')")
-    suspend fun pushableCount(userId: String): Int
-
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND entityType=:entityType AND entityId=:entityId AND state IN ('PENDING','FAILED','CONFLICT')")
-    suspend fun openCount(userId: String, entityType: String, entityId: String): Int
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun enqueue(item: OutboxMutationEntity)
+    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED') ORDER BY createdAt LIMIT :limit") suspend fun pending(userId: String, limit: Int = 100): List<OutboxMutationEntity>
+    @Query("SELECT * FROM outbox_mutations WHERE mutationId=:id LIMIT 1") suspend fun byId(id: String): OutboxMutationEntity?
+    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state='CONFLICT' ORDER BY createdAt") fun observeConflicts(userId: String): Flow<List<OutboxMutationEntity>>
+    @Query("UPDATE outbox_mutations SET state=:state, lastError=:error, attempts=attempts+1 WHERE mutationId=:id") suspend fun mark(id: String, state: String, error: String? = null)
+    @Query("UPDATE outbox_mutations SET state='CONFLICT', lastError=:error, attempts=attempts+1, serverVersion=:serverVersion, serverPayloadJson=:serverPayloadJson WHERE mutationId=:id") suspend fun markConflict(id: String, error: String?, serverVersion: Long?, serverPayloadJson: String?)
+    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, baseVersion=:serverVersion, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id") suspend fun retryAgainstVersion(id: String, serverVersion: Long)
+    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, operation='CREATE', baseVersion=0, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id") suspend fun retryAsCreate(id: String)
+    @Query("DELETE FROM outbox_mutations WHERE mutationId=:id") suspend fun delete(id: String)
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED','CONFLICT')") fun observePendingCount(userId: String): Flow<Int>
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')") fun observePushableCount(userId: String): Flow<Int>
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')") suspend fun pushableCount(userId: String): Int
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND entityType=:entityType AND entityId=:entityId AND state IN ('PENDING','FAILED','CONFLICT')") suspend fun openCount(userId: String, entityType: String, entityId: String): Int
+    @Query("UPDATE outbox_mutations SET userId=:newUserId WHERE userId=:oldUserId") suspend fun reassignUser(oldUserId: String, newUserId: String)
 }
 
 @Dao
 interface SyncMetaDao {
-    @Query("SELECT value FROM sync_meta WHERE key=:key LIMIT 1")
-    suspend fun get(key: String): String?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun put(item: SyncMetaEntity)
+    @Query("SELECT value FROM sync_meta WHERE key=:key LIMIT 1") suspend fun get(key: String): String?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(item: SyncMetaEntity)
 }

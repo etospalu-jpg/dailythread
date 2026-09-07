@@ -3,14 +3,17 @@ package com.dailythread.app
 import android.app.Application
 import android.os.Build
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.work.*
 import com.dailythread.app.data.local.AppDatabase
+import com.dailythread.app.data.repository.ProfileRepository
+import com.dailythread.app.data.repository.AuthRepository
 import com.dailythread.app.data.repository.TokenStore
+import com.dailythread.app.sync.RealtimeInvalidationClient
 import com.dailythread.app.sync.SyncEngine
 import com.dailythread.app.sync.SyncWorker
-import com.dailythread.app.sync.RealtimeInvalidationClient
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -22,14 +25,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class DailyThreadApp : Application() {
     lateinit var db: AppDatabase
     lateinit var tokenStore: TokenStore
+    lateinit var profileRepository: ProfileRepository
     lateinit var syncEngine: SyncEngine
     lateinit var realtime: RealtimeInvalidationClient
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val cloudIdentityMutex = Mutex()
 
     val deviceId: String by lazy {
         getSharedPreferences("device", MODE_PRIVATE).let { prefs ->
@@ -53,6 +60,7 @@ class DailyThreadApp : Application() {
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
         tokenStore = TokenStore(this)
+        profileRepository = ProfileRepository(tokenStore)
         syncEngine = SyncEngine(
             db = db,
             tokenStore = tokenStore,
@@ -61,6 +69,14 @@ class DailyThreadApp : Application() {
             appVersion = BuildConfig.VERSION_NAME
         )
         realtime = RealtimeInvalidationClient(tokenStore, syncEngine)
+
+        applicationScope.launch {
+            tokenStore.ensureLocalUserId(deviceId)
+            if (ensureCloudIdentity()) {
+                runCatching { profileRepository.syncDirty() }
+                runCatching { syncEngine.runOnce() }
+            }
+        }
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -85,17 +101,53 @@ class DailyThreadApp : Application() {
                 .collectLatest { count ->
                     if (count <= 0) return@collectLatest
                     delay(750)
-                    val immediate = OneTimeWorkRequestBuilder<SyncWorker>()
-                        .setConstraints(constraints)
-                        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-                        .build()
-                    WorkManager.getInstance(this@DailyThreadApp).enqueueUniqueWork(
-                        "daily-thread-sync-now",
-                        ExistingWorkPolicy.KEEP,
-                        immediate
-                    )
+                    enqueueImmediateSync(constraints)
                 }
         }
+    }
+
+    fun enqueueImmediateSync(
+        constraints: Constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+    ) {
+        val immediate = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "daily-thread-sync-now",
+            ExistingWorkPolicy.KEEP,
+            immediate
+        )
+    }
+
+    suspend fun ensureCloudIdentity(): Boolean = cloudIdentityMutex.withLock {
+        val localUserId = tokenStore.ensureLocalUserId(deviceId)
+        if (tokenStore.hasCloudSession()) return@withLock true
+
+        val auth = AuthRepository(tokenStore)
+        val session = auth.createAnonymousSession().getOrNull() ?: return@withLock false
+        val cloudUserId = session.user.id
+
+        if (cloudUserId != localUserId) {
+            db.withTransaction {
+                db.focusDao().reassignUser(localUserId, cloudUserId)
+                db.taskDao().reassignUser(localUserId, cloudUserId)
+                db.activityDao().reassignUser(localUserId, cloudUserId)
+                db.habitDao().reassignUser(localUserId, cloudUserId)
+                db.habitEntryDao().reassignUser(localUserId, cloudUserId)
+                db.reviewDao().reassignUser(localUserId, cloudUserId)
+                db.outboxDao().reassignUser(localUserId, cloudUserId)
+            }
+        }
+
+        tokenStore.save(
+            access = session.accessToken,
+            refresh = session.refreshToken,
+            userId = cloudUserId,
+            expiresInSeconds = session.expiresIn,
+            email = null
+        )
+        true
     }
 
     companion object {

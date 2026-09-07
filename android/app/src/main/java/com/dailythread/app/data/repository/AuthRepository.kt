@@ -5,15 +5,13 @@ import com.dailythread.app.data.network.LoginRequest
 import com.dailythread.app.data.network.RefreshRequest
 import com.dailythread.app.data.network.SignupRequest
 
-data class SignupResult(
-    val userId: String,
-    val sessionReady: Boolean
-)
+data class SignupResult(val userId: String, val sessionReady: Boolean)
 
 class AuthRepository(private val tokenStore: TokenStore) {
     suspend fun login(email: String, password: String): Result<String> = runCatching {
-        val res = ApiFactory.auth.login(request = LoginRequest(email.trim(), password))
-        tokenStore.save(res.accessToken, res.refreshToken, res.user.id, res.expiresIn)
+        val cleanEmail = email.trim()
+        val res = ApiFactory.auth.login(request = LoginRequest(cleanEmail, password))
+        tokenStore.save(res.accessToken, res.refreshToken, res.user.id, res.expiresIn, res.user.email ?: cleanEmail)
         res.user.id
     }
 
@@ -21,24 +19,17 @@ class AuthRepository(private val tokenStore: TokenStore) {
         val cleanEmail = email.trim()
         require(cleanEmail.isNotEmpty()) { "Email wajib diisi." }
         require(password.length >= 6) { "Password minimal 6 karakter." }
-
         val res = ApiFactory.auth.signup(request = SignupRequest(cleanEmail, password))
         val user = requireNotNull(res.user) { "Akun tidak berhasil dibuat." }
         val access = res.accessToken
         val refresh = res.refreshToken
         val expires = res.expiresIn
         val sessionReady = !access.isNullOrBlank() && !refresh.isNullOrBlank() && expires != null
-
-        if (sessionReady) {
-            tokenStore.save(
-                access = requireNotNull(access),
-                refresh = requireNotNull(refresh),
-                userId = user.id,
-                expiresInSeconds = requireNotNull(expires)
-            )
-        }
+        if (sessionReady) tokenStore.save(requireNotNull(access), requireNotNull(refresh), user.id, requireNotNull(expires), user.email ?: cleanEmail)
         SignupResult(user.id, sessionReady)
     }
+
+    suspend fun createAnonymousSession() = runCatching { ApiFactory.auth.signupAnonymous() }
 
     suspend fun validAccessToken(): String? {
         val current = tokenStore.accessToken() ?: return null
@@ -46,7 +37,7 @@ class AuthRepository(private val tokenStore: TokenStore) {
         val refresh = tokenStore.refreshToken() ?: return current
         return runCatching {
             val res = ApiFactory.auth.refresh(request = RefreshRequest(refresh))
-            tokenStore.save(res.accessToken, res.refreshToken, res.user.id, res.expiresIn)
+            tokenStore.save(res.accessToken, res.refreshToken, res.user.id, res.expiresIn, res.user.email)
             res.accessToken
         }.getOrElse { current }
     }
