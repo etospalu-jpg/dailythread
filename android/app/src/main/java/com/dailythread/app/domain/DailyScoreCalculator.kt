@@ -11,18 +11,25 @@ object DailyScoreCalculator {
         entries: List<HabitEntryEntity>,
         targetFocusMinutes: Int = 120
     ): Int {
-        val focusDone = focus.count { it.status == "COMPLETED" }
-        val taskDone = tasks.count { it.status == "DONE" }
-        val habitDone = entries.count { it.completed && habits.any { h -> h.id == it.habitId } }
-        val productiveMinutes = activities
-            .filter { it.categoryName != "Istirahat" }
-            .sumOf { it.durationMinutes }
+        val activeFocus = focus.filter { it.deletedAt == null }
+        val activeTasks = tasks.filter { it.deletedAt == null }
+        val activeActivities = activities.filter { it.deletedAt == null }
+        val activeHabits = habits.filter { it.deletedAt == null && it.isActive }
+        val activeHabitIds = activeHabits.mapTo(mutableSetOf()) { it.id }
+        val activeEntries = entries.filter { it.deletedAt == null && it.habitId in activeHabitIds }
 
-        val focusScore = if (focus.isEmpty()) 0.0 else 40.0 * focusDone / focus.size
-        val taskScore = if (tasks.isEmpty()) 0.0 else 20.0 * taskDone / tasks.size
+        val focusDone = activeFocus.count { it.status == "COMPLETED" }
+        val taskDone = activeTasks.count { it.status == "DONE" }
+        val habitDone = activeEntries.count { it.completed }
+        val productiveMinutes = activeActivities
+            .filter { !it.categoryName.equals("Istirahat", ignoreCase = true) }
+            .sumOf { it.durationMinutes.coerceAtLeast(0) }
+
+        val focusScore = if (activeFocus.isEmpty()) 0.0 else 40.0 * focusDone / activeFocus.size
+        val taskScore = if (activeTasks.isEmpty()) 0.0 else 20.0 * taskDone / activeTasks.size
         val target = targetFocusMinutes.coerceAtLeast(15)
-        val timeScore = 20.0 * (productiveMinutes / target.toDouble()).coerceAtMost(1.0)
-        val habitScore = if (habits.isEmpty()) 0.0 else 20.0 * habitDone / habits.size
+        val timeScore = 20.0 * (productiveMinutes / target.toDouble()).coerceIn(0.0, 1.0)
+        val habitScore = if (activeHabits.isEmpty()) 0.0 else 20.0 * habitDone.coerceAtMost(activeHabits.size) / activeHabits.size
 
         return (focusScore + taskScore + timeScore + habitScore).toInt().coerceIn(0, 100)
     }
