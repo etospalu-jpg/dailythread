@@ -13,8 +13,8 @@ android {
         applicationId = "com.dailythread.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"https://kmrgpityqzksuqvuqyfv.supabase.co\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_2SL71Akmf8N2BXND2GbkKg_cK4oLHuc\"")

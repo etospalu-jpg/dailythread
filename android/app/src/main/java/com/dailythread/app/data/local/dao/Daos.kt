@@ -96,8 +96,23 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox_mutations WHERE state IN ('PENDING','FAILED') ORDER BY createdAt LIMIT :limit")
     suspend fun pending(limit: Int = 100): List<OutboxMutationEntity>
 
+    @Query("SELECT * FROM outbox_mutations WHERE mutationId=:id LIMIT 1")
+    suspend fun byId(id: String): OutboxMutationEntity?
+
+    @Query("SELECT * FROM outbox_mutations WHERE state='CONFLICT' ORDER BY createdAt")
+    fun observeConflicts(): Flow<List<OutboxMutationEntity>>
+
     @Query("UPDATE outbox_mutations SET state=:state, lastError=:error, attempts=attempts+1 WHERE mutationId=:id")
     suspend fun mark(id: String, state: String, error: String? = null)
+
+    @Query("UPDATE outbox_mutations SET state='CONFLICT', lastError=:error, attempts=attempts+1, serverVersion=:serverVersion, serverPayloadJson=:serverPayloadJson WHERE mutationId=:id")
+    suspend fun markConflict(id: String, error: String?, serverVersion: Long?, serverPayloadJson: String?)
+
+    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, baseVersion=:serverVersion, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id")
+    suspend fun retryAgainstVersion(id: String, serverVersion: Long)
+
+    @Query("UPDATE outbox_mutations SET state='PENDING', lastError=NULL, operation='CREATE', baseVersion=0, serverVersion=NULL, serverPayloadJson=NULL WHERE mutationId=:id")
+    suspend fun retryAsCreate(id: String)
 
     @Query("DELETE FROM outbox_mutations WHERE mutationId=:id")
     suspend fun delete(id: String)

@@ -30,6 +30,7 @@ data class PushResult(
     val status: String,
     val error: String? = null,
     @SerializedName("server_version") val serverVersion: Long? = null,
+    @SerializedName("server_entity") val serverEntity: JsonObject? = null,
     val entity: JsonObject? = null
 )
 data class PushResponse(val ok: Boolean, val results: List<PushResult>)

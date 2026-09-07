@@ -52,7 +52,7 @@ Implemented locally:
 - Local pending count UI
 
 ## Phase 6 — Sync + realtime
-Status: IN PROGRESS
+Status: IMPLEMENTED v0.3
 
 Implemented:
 - Push queue
@@ -62,12 +62,15 @@ Implemented:
 - Conflict-safe pull (does not overwrite unsynced local changes)
 - Refresh-token based online session renewal
 - Device heartbeat registration
-- Edge Function sync v2
+- Edge Function sync v3
+- Foreground Realtime WebSocket invalidation into Room
+- User-facing conflict list
+- Keep-server conflict resolution
+- Keep-local conflict retry using latest server version
 
 Remaining:
-- User-facing conflict resolution screen
-- Realtime socket listener into Room
-- Backoff observability / sync error history
+- Persistent sync error history / observability
+- Broader multi-device runtime testing
 
 ## Phase 7 — Admin + automation
 Status: NOT STARTED

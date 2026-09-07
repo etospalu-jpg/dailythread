@@ -13,7 +13,8 @@ Current cloud migration history:
 7. `0007_activity_category_policy_cleanup`
 
 Edge Functions:
-- `sync` version 2, JWT verification enabled.
+- `sync` version 3, JWT verification enabled.
+- v3 returns server entities for unique/version conflicts so Android can resolve them safely.
 
 Security advisor after current changes: no security lints.
 Performance advisor: only unused-index informational notices remain, expected on a new/empty project.

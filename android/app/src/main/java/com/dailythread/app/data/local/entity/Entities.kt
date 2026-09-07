@@ -127,6 +127,8 @@ data class OutboxMutationEntity(
     val state: String = "PENDING",
     val attempts: Int = 0,
     val lastError: String? = null,
+    val serverVersion: Long? = null,
+    val serverPayloadJson: String? = null,
     val createdAt: String
 )
 

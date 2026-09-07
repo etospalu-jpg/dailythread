@@ -116,6 +116,10 @@ private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit
     val entries by habitRepo.observeEntries(userId, date).collectAsState(initial = emptyList())
     val review by reviewRepo.observe(userId, date).collectAsState(initial = null)
     val pending by app.db.outboxDao().observePendingCount().collectAsState(initial = 0)
+    val conflicts by app.db.outboxDao().observeConflicts().collectAsState(initial = emptyList())
+
+    LaunchedEffect(userId) { app.realtime.start() }
+    DisposableEffect(userId) { onDispose { app.realtime.stop() } }
 
     val score = remember(focus, tasks, activities, habits, entries) {
         DailyScoreCalculator.calculate(focus, tasks, activities, habits, entries)
@@ -149,7 +153,14 @@ private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit
             Tab.TODAY -> TodayScreen(Modifier.padding(padding), score, focus, tasks, habits, entries, focusRepo, taskRepo, habitRepo)
             Tab.TIMELINE -> TimelineScreen(Modifier.padding(padding), activities, activityRepo)
             Tab.REVIEW -> ReviewScreen(Modifier.padding(padding), score, review, reviewRepo)
-            Tab.SYNC -> SyncScreen(Modifier.padding(padding), pending) { app.syncEngine.runOnce() }
+            Tab.SYNC -> SyncScreen(
+                modifier = Modifier.padding(padding),
+                pending = pending,
+                conflicts = conflicts,
+                onSync = { app.syncEngine.runOnce() },
+                onKeepServer = { app.syncEngine.resolveKeepServer(it) },
+                onKeepMine = { app.syncEngine.resolveKeepMine(it) }
+            )
         }
     }
 }
@@ -284,22 +295,50 @@ private fun ReviewScreen(modifier: Modifier, score: Int, review: ReviewEntity?, 
 }
 
 @Composable
-private fun SyncScreen(modifier: Modifier, pending: Int, onSync: suspend () -> Unit) {
+private fun SyncScreen(
+    modifier: Modifier,
+    pending: Int,
+    conflicts: List<OutboxMutationEntity>,
+    onSync: suspend () -> Unit,
+    onKeepServer: suspend (String) -> Unit,
+    onKeepMine: suspend (String) -> Unit
+) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    Column(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Sinkronisasi", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text(if (pending == 0) "Semua perubahan tersinkron." else "$pending perubahan masih menunggu.")
-        Button(onClick = {
-            scope.launch {
-                busy = true
-                message = runCatching { onSync(); "Sinkronisasi selesai." }.getOrElse { it.message ?: "Sinkronisasi gagal." }
-                busy = false
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Text("Sinkronisasi", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+        item { Text(if (pending == 0) "Semua perubahan tersinkron." else "$pending perubahan masih menunggu.") }
+        item {
+            Button(onClick = {
+                scope.launch {
+                    busy = true
+                    message = runCatching { onSync(); "Sinkronisasi selesai." }.getOrElse { it.message ?: "Sinkronisasi gagal." }
+                    busy = false
+                }
+            }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Sinkronisasi…" else "Sinkronkan sekarang") }
+        }
+        message?.let { item { Text(it) } }
+        item { Text("Realtime aktif saat aplikasi dibuka. WorkManager menjadi fallback ketika aplikasi berada di background.", style = MaterialTheme.typography.bodySmall) }
+
+        if (conflicts.isNotEmpty()) {
+            item { Text("Konflik data", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+            items(conflicts, key = { it.mutationId }) { conflict ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(conflict.entityType.replace('_', ' ').uppercase(), fontWeight = FontWeight.SemiBold)
+                        Text(conflict.lastError ?: "Perubahan lokal dan server berbeda.", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { scope.launch { onKeepServer(conflict.mutationId) } },
+                                enabled = conflict.serverPayloadJson != null
+                            ) { Text("Pakai server") }
+                            Button(onClick = { scope.launch { onKeepMine(conflict.mutationId) } }) { Text("Pakai lokal") }
+                        }
+                    }
+                }
             }
-        }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Sinkronisasi…" else "Sinkronkan sekarang") }
-        message?.let { Text(it) }
-        Text("Data selalu disimpan ke Room/SQLite terlebih dahulu. WorkManager akan mencoba sinkronisasi lagi saat internet tersedia.", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

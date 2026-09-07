@@ -113,7 +113,34 @@ async function processMutation(userId: string, mutation: any) {
           });
           return { mutation_id: mutationId, status: "SYNCED", recovered: true, entity: existing };
         }
-        return { mutation_id: mutationId, status: "CONFLICT", error: error.message };
+
+        const input = cleanPayload(mutation?.payload) as Record<string, any>;
+        let conflictQuery: any = admin.from(table).select("*").eq("user_id", userId).is("deleted_at", null);
+        if (entityType === "focus_item" && input.focus_date && input.sort_order) {
+          conflictQuery = conflictQuery.eq("focus_date", input.focus_date).eq("sort_order", input.sort_order);
+        } else if (entityType === "habit" && input.name) {
+          conflictQuery = conflictQuery.ilike("name", String(input.name));
+        } else if (entityType === "habit_entry" && input.habit_id && input.entry_date) {
+          conflictQuery = conflictQuery.eq("habit_id", input.habit_id).eq("entry_date", input.entry_date);
+        } else if (entityType === "daily_review" && input.review_date) {
+          conflictQuery = conflictQuery.eq("review_date", input.review_date);
+        } else {
+          conflictQuery = null;
+        }
+        if (conflictQuery) {
+          const { data: conflicting } = await conflictQuery.limit(1).maybeSingle();
+          if (conflicting) {
+            return {
+              mutation_id: mutationId,
+              status: "CONFLICT",
+              error: "unique_conflict",
+              server_version: Number(conflicting.version || 0),
+              server_updated_at: conflicting.updated_at,
+              server_entity: conflicting,
+            };
+          }
+        }
+        return { mutation_id: mutationId, status: "CONFLICT", error: "unique_conflict" };
       }
       return { mutation_id: mutationId, status: "FAILED", error: error.message };
     }

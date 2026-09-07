@@ -13,7 +13,7 @@ Daily Thread is being migrated from Google Apps Script + Google Sheets into a na
 
 ## Current version
 
-`0.2.0` — Phase 5 offline CRUD foundation.
+`0.3.0` — Phase 6 realtime + conflict resolution foundation.
 
 ## Offline flow
 
@@ -42,6 +42,8 @@ Instant local UI       WorkManager when online
 Focus, Tasks, Activities, Habits, Habit Entries, Daily Review.
 
 Each local write is committed to Room first and queued for cloud sync in the same Room transaction.
+
+Version 0.3 adds foreground Supabase Realtime invalidation and user-facing conflict resolution (keep server / keep local).
 
 ## Supabase
 

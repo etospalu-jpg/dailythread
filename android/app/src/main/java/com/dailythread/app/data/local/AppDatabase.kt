@@ -11,7 +11,7 @@ import com.dailythread.app.data.local.entity.*
         HabitEntity::class, HabitEntryEntity::class, ReviewEntity::class,
         OutboxMutationEntity::class, SyncMetaEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
