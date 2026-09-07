@@ -24,9 +24,21 @@ internal class MutationQueue(
         baseVersion: Long,
         payload: Map<String, Any?> = emptyMap()
     ) {
+        val userId = when (entityType) {
+            "focus_item" -> db.focusDao().byId(entityId)?.userId
+            "task" -> db.taskDao().byId(entityId)?.userId
+            "activity" -> db.activityDao().byId(entityId)?.userId
+            "habit" -> db.habitDao().byId(entityId)?.userId
+            "habit_entry" -> db.habitEntryDao().byId(entityId)?.userId
+            "daily_review" -> db.reviewDao().byId(entityId)?.userId
+            else -> null
+        }
+        require(!userId.isNullOrBlank()) { "Mutation owner could not be resolved." }
+
         db.outboxDao().enqueue(
             OutboxMutationEntity(
                 mutationId = UUID.randomUUID().toString(),
+                userId = userId,
                 entityType = entityType,
                 entityId = entityId,
                 operation = operation,
