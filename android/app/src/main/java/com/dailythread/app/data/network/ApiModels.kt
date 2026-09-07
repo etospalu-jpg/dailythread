@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 
 data class LoginRequest(val email: String, val password: String)
+data class SignupRequest(val email: String, val password: String)
 data class RefreshRequest(@SerializedName("refresh_token") val refreshToken: String)
 data class UserDto(val id: String, val email: String?)
 data class AuthResponse(
@@ -11,6 +12,12 @@ data class AuthResponse(
     @SerializedName("refresh_token") val refreshToken: String,
     @SerializedName("expires_in") val expiresIn: Long,
     val user: UserDto
+)
+data class SignupResponse(
+    @SerializedName("access_token") val accessToken: String? = null,
+    @SerializedName("refresh_token") val refreshToken: String? = null,
+    @SerializedName("expires_in") val expiresIn: Long? = null,
+    val user: UserDto? = null
 )
 
 data class SyncMutationDto(
