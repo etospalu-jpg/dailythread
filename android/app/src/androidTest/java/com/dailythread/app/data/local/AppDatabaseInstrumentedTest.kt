@@ -35,29 +35,8 @@ class AppDatabaseInstrumentedTest {
     @Test
     fun focusDao_excludesSoftDeletedRows() = runBlocking {
         val dao = db.focusDao()
-        dao.upsert(
-            FocusEntity(
-                id = "focus-active",
-                userId = "user-1",
-                focusDate = "2026-09-07",
-                title = "Aktif",
-                sortOrder = 1,
-                createdAt = now,
-                updatedAt = now
-            )
-        )
-        dao.upsert(
-            FocusEntity(
-                id = "focus-deleted",
-                userId = "user-1",
-                focusDate = "2026-09-07",
-                title = "Terhapus",
-                sortOrder = 2,
-                createdAt = now,
-                updatedAt = now,
-                deletedAt = now
-            )
-        )
+        dao.upsert(FocusEntity("focus-active", "user-1", "2026-09-07", "Aktif", sortOrder = 1, createdAt = now, updatedAt = now))
+        dao.upsert(FocusEntity("focus-deleted", "user-1", "2026-09-07", "Terhapus", sortOrder = 2, createdAt = now, updatedAt = now, deletedAt = now))
 
         val visible = dao.forDate("user-1", "2026-09-07")
         assertEquals(listOf("focus-active"), visible.map { it.id })
@@ -74,10 +53,11 @@ class AppDatabaseInstrumentedTest {
     }
 
     @Test
-    fun outboxPendingCount_countsPendingFailedAndConflictOnly() = runBlocking {
+    fun outboxPendingCount_countsPendingFailedAndConflictOnlyForUser() = runBlocking {
         val dao = db.outboxDao()
-        fun item(id: String, state: String) = OutboxMutationEntity(
+        fun item(id: String, userId: String, state: String) = OutboxMutationEntity(
             mutationId = id,
+            userId = userId,
             entityType = "task",
             entityId = "entity-$id",
             operation = "UPDATE",
@@ -88,12 +68,15 @@ class AppDatabaseInstrumentedTest {
             createdAt = now
         )
 
-        dao.enqueue(item("p", "PENDING"))
-        dao.enqueue(item("f", "FAILED"))
-        dao.enqueue(item("c", "CONFLICT"))
-        dao.enqueue(item("s", "SYNCED"))
+        dao.enqueue(item("p", "user-a", "PENDING"))
+        dao.enqueue(item("f", "user-a", "FAILED"))
+        dao.enqueue(item("c", "user-a", "CONFLICT"))
+        dao.enqueue(item("s", "user-a", "SYNCED"))
+        dao.enqueue(item("other", "user-b", "PENDING"))
 
-        assertEquals(3, dao.observePendingCount().first())
+        assertEquals(3, dao.observePendingCount("user-a").first())
+        assertEquals(1, dao.observePendingCount("user-b").first())
+        assertEquals(listOf("p", "f"), dao.pending("user-a").map { it.mutationId })
     }
 
     @Test
@@ -101,6 +84,7 @@ class AppDatabaseInstrumentedTest {
         val dao = db.outboxDao()
         val mutation = OutboxMutationEntity(
             mutationId = "m1",
+            userId = "user-a",
             entityType = "task",
             entityId = "task-1",
             operation = "UPDATE",
