@@ -6,7 +6,7 @@ Daily Thread is being migrated from Google Apps Script + Google Sheets into a na
 
 - Android: Kotlin + Jetpack Compose
 - Local data: Room / SQLite
-- Session: DataStore
+- Session: DataStore + Android Keystore token encryption
 - Background sync: WorkManager
 - Cloud: Supabase Auth + PostgreSQL + Edge Functions + Realtime
 - Web dashboard: Next.js
@@ -15,14 +15,19 @@ Daily Thread is being migrated from Google Apps Script + Google Sheets into a na
 
 ## Current state
 
-- Android `0.4.0-rc1`: release-candidate testing track
+- Android `0.4.0-rc2`: release-candidate testing track
+- In-app account registration + login through Supabase Auth
+- Access/refresh tokens encrypted with Android Keystore AES-GCM
+- Cleartext Android network traffic disabled
 - Supabase `/sync`: Edge Function v5
-- Device heartbeat now reports device name, app version, and last-seen time
+- Device heartbeat reports device name, app version, and last-seen time
 - Persistent sync observability through `sync_events`
+- Per-user Room outbox and sync cursor isolation
+- Automatic offline-to-online WorkManager sync scheduling and retry
 - Android CI gates: JVM tests, lint, instrumentation APK compile, debug APK build
-- Emulator instrumentation test workflow added for Room/offline/conflict behavior
+- Emulator instrumentation workflow covers Room isolation and Keystore behavior
 - Web dashboard production build passes in GitHub Actions
-- Vercel production deploy is temporarily blocked by the Hobby API deployment quota, not by a source build failure
+- Vercel production deploy is temporarily blocked by the connected Hobby team's API deployment quota, not by a source build failure
 
 ## Offline flow
 
@@ -31,19 +36,19 @@ UI
  ↓
 Repository
  ↓
-Room transaction ─────→ Outbox mutation
- ↓                         ↓
-Instant local UI       WorkManager when online
-                           ↓
-                     Supabase /sync
-                           ↓
-                       Postgres
-                           ↓
-                       change_log
-                           ↓
-                       cursor pull
-                           ↓
-                          Room
+Room transaction ─────→ User-scoped outbox mutation
+ ↓                              ↓
+Instant local UI          WorkManager when online
+                                ↓
+                          Supabase /sync v5
+                                ↓
+                            Postgres
+                                ↓
+                            change_log
+                                ↓
+                         per-user cursor pull
+                                ↓
+                               Room
 ```
 
 ## Implemented entities
@@ -95,4 +100,4 @@ npm install
 npm run build
 ```
 
-GitHub Actions validates Android and web builds. See `docs/PHASE_STATUS.md`, `docs/CLOUD_STATE.md`, `docs/WEB_DASHBOARD.md`, and `docs/TEST_MATRIX.md`.
+GitHub Actions validates Android and web builds. See `docs/PHASE_STATUS.md`, `docs/CLOUD_STATE.md`, `docs/WEB_DASHBOARD.md`, `docs/TEST_MATRIX.md`, and `docs/RC2_DEVICE_TEST.md`.
