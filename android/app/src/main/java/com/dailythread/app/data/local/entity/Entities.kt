@@ -115,9 +115,13 @@ data class ReviewEntity(
     val syncState: String = "PENDING"
 )
 
-@Entity(tableName = "outbox_mutations", indices = [Index("state"), Index(value = ["entityType", "entityId"])])
+@Entity(
+    tableName = "outbox_mutations",
+    indices = [Index("state"), Index(value = ["entityType", "entityId"]), Index(value = ["userId", "state"])]
+)
 data class OutboxMutationEntity(
     @PrimaryKey val mutationId: String,
+    val userId: String,
     val entityType: String,
     val entityId: String,
     val operation: String,
