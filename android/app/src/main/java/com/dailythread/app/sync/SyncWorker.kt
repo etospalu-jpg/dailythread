@@ -9,7 +9,9 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
     override suspend fun doWork(): Result = try {
         val app = applicationContext as DailyThreadApp
         app.syncEngine.runOnce()
-        Result.success()
+
+        val stillPushable = app.db.outboxDao().pushableCount()
+        if (stillPushable > 0 && runAttemptCount < 5) Result.retry() else Result.success()
     } catch (t: Throwable) {
         if (runAttemptCount >= 5) Result.failure() else Result.retry()
     }
