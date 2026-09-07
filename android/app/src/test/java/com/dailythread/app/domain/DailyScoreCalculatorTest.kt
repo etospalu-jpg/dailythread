@@ -21,4 +21,41 @@ class DailyScoreCalculatorTest {
     fun emptyDayScores0() {
         assertEquals(0, DailyScoreCalculator.calculate(emptyList(), emptyList(), emptyList(), emptyList(), emptyList()))
     }
+
+    @Test
+    fun restTimeDoesNotIncreaseProductiveScore() {
+        val activities = listOf(
+            ActivityEntity("a1","u","2026-09-07","Break",categoryName="Istirahat",startedAt=now,endedAt=now,durationMinutes=240,createdAt=now,updatedAt=now)
+        )
+        assertEquals(0, DailyScoreCalculator.calculate(emptyList(), emptyList(), activities, emptyList(), emptyList()))
+    }
+
+    @Test
+    fun inactiveHabitDoesNotReduceHabitScore() {
+        val habits = listOf(
+            HabitEntity("h1","u","Active",isActive=true,createdAt=now,updatedAt=now),
+            HabitEntity("h2","u","Paused",isActive=false,createdAt=now,updatedAt=now)
+        )
+        val entries = listOf(HabitEntryEntity("e1","u","h1","2026-09-07",completed=true,createdAt=now,updatedAt=now))
+        assertEquals(20, DailyScoreCalculator.calculate(emptyList(), emptyList(), emptyList(), habits, entries))
+    }
+
+    @Test
+    fun deletedRowsAreIgnored() {
+        val deleted = "2026-09-07T01:00:00Z"
+        val focus = listOf(FocusEntity("f1","u","2026-09-07","Deleted",status="PLANNED",createdAt=now,updatedAt=now,deletedAt=deleted))
+        val tasks = listOf(TaskEntity("t1","u","2026-09-07","Deleted",status="TODO",createdAt=now,updatedAt=now,deletedAt=deleted))
+        val activities = listOf(ActivityEntity("a1","u","2026-09-07","Deleted",categoryName="Kerja",startedAt=now,endedAt=now,durationMinutes=120,createdAt=now,updatedAt=now,deletedAt=deleted))
+        val habits = listOf(HabitEntity("h1","u","Deleted",createdAt=now,updatedAt=now,deletedAt=deleted))
+        val entries = listOf(HabitEntryEntity("e1","u","h1","2026-09-07",completed=true,createdAt=now,updatedAt=now,deletedAt=deleted))
+        assertEquals(0, DailyScoreCalculator.calculate(focus,tasks,activities,habits,entries))
+    }
+
+    @Test
+    fun productiveTimeIsCappedAtTwentyPoints() {
+        val activities = listOf(
+            ActivityEntity("a1","u","2026-09-07","Long work",categoryName="Kerja",startedAt=now,endedAt=now,durationMinutes=999,createdAt=now,updatedAt=now)
+        )
+        assertEquals(20, DailyScoreCalculator.calculate(emptyList(), emptyList(), activities, emptyList(), emptyList(), targetFocusMinutes=120))
+    }
 }
