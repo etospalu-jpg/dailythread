@@ -78,9 +78,12 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [data, setData] = useState<DashboardData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const date = useMemo(() => todayMakassar(), []);
 
   const loadDashboard = useCallback(async () => {
@@ -132,12 +135,32 @@ export default function Home() {
     else setData(emptyData);
   }, [session, loadDashboard]);
 
-  async function login(event: FormEvent) {
+  async function submitAuth(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setInfo(null);
+
+    if (creatingAccount) {
+      if (password.length < 6) {
+        setError("Password minimal 6 karakter.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Konfirmasi password tidak sama.");
+        return;
+      }
+    }
+
     setLoading(true);
-    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-    if (loginError) setError(loginError.message);
+    if (creatingAccount) {
+      const { data: signupData, error: signupError } = await supabase.auth.signUp({ email: email.trim(), password });
+      if (signupError) setError(signupError.message);
+      else if (!signupData.session) setInfo("Akun dibuat. Cek email untuk konfirmasi, lalu masuk.");
+      else setInfo("Akun berhasil dibuat.");
+    } else {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (loginError) setError(loginError.message);
+    }
     setLoading(false);
   }
 
@@ -147,14 +170,29 @@ export default function Home() {
         <section className="login-card">
           <div className="brand-mark">DT</div>
           <p className="eyebrow">DAILY THREAD</p>
-          <h1>Masuk ke dashboard</h1>
+          <h1>{creatingAccount ? "Buat akun" : "Masuk ke dashboard"}</h1>
           <p className="muted">Dashboard memakai Supabase Auth dan Row Level Security yang sama dengan APK.</p>
-          <form onSubmit={login} className="login-form">
+          <form onSubmit={submitAuth} className="login-form">
             <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nama@email.com" /></label>
-            <label>Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></label>
-            <button disabled={loading}>{loading ? "Memproses…" : "Masuk"}</button>
+            <label>Password<input type="password" required minLength={creatingAccount ? 6 : undefined} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></label>
+            {creatingAccount && <label>Ulangi password<input type="password" required minLength={6} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" /></label>}
+            <button disabled={loading}>{loading ? "Memproses…" : creatingAccount ? "Buat akun" : "Masuk"}</button>
           </form>
+          <button
+            type="button"
+            className="auth-switch"
+            disabled={loading}
+            onClick={() => {
+              setCreatingAccount((value) => !value);
+              setConfirmPassword("");
+              setError(null);
+              setInfo(null);
+            }}
+          >
+            {creatingAccount ? "Sudah punya akun? Masuk" : "Belum punya akun? Buat akun"}
+          </button>
           {error && <p className="error-box">{error}</p>}
+          {info && <p className="info-box">{info}</p>}
         </section>
       </main>
     );
@@ -210,7 +248,7 @@ export default function Home() {
         </article>
 
         <article className="panel wide">
-          <div className="panel-head"><div><p className="eyebrow">SYNC OBSERVABILITY</p><h2>Riwayat sinkronisasi terbaru</h2></div><span className="muted">Edge Function v4</span></div>
+          <div className="panel-head"><div><p className="eyebrow">SYNC OBSERVABILITY</p><h2>Riwayat sinkronisasi terbaru</h2></div><span className="muted">Edge Function v5</span></div>
           <div className="sync-table">
             <div className="sync-row sync-head"><span>Waktu</span><span>Arah</span><span>Status</span><span>Data</span><span>Durasi</span></div>
             {data.syncEvents.length === 0 && <p className="empty">Belum ada event sinkronisasi. Jalankan APK lalu sinkronkan.</p>}
