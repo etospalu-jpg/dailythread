@@ -1,6 +1,7 @@
 package com.dailythread.app.data.repository
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -35,15 +36,26 @@ class TokenStore(private val context: Context) {
         .map { it[userKey] }
         .distinctUntilChanged()
 
-    suspend fun accessToken(): String? = decryptStored(context.dataStore.data.first()[accessKey])
-    suspend fun refreshToken(): String? = decryptStored(context.dataStore.data.first()[refreshKey])
+    suspend fun accessToken(): String? = readToken(accessKey)
+    suspend fun refreshToken(): String? = readToken(refreshKey)
     suspend fun userId(): String? = context.dataStore.data.first()[userKey]
     suspend fun expiresAtMs(): Long = context.dataStore.data.first()[expiresAtKey] ?: 0L
     suspend fun hasOfflineSession(): Boolean = userId() != null
     suspend fun clear() = context.dataStore.edit { it.clear() }
 
-    private fun decryptStored(value: String?): String? {
-        if (value.isNullOrBlank()) return null
-        return runCatching { cipher.decrypt(value) }.getOrNull()
+    private suspend fun readToken(key: Preferences.Key<String>): String? {
+        val stored = context.dataStore.data.first()[key]
+        if (stored.isNullOrBlank()) return null
+        val plain = runCatching { cipher.decrypt(stored) }.getOrNull() ?: return null
+
+        // Existing RC installs may still contain the pre-Keystore plaintext value.
+        // Re-wrap it immediately on first successful read after upgrade.
+        if (!stored.startsWith("v1:")) {
+            val encrypted = runCatching { cipher.encrypt(plain) }.getOrNull()
+            if (encrypted != null) {
+                context.dataStore.edit { it[key] = encrypted }
+            }
+        }
+        return plain
     }
 }
