@@ -93,14 +93,14 @@ interface OutboxDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun enqueue(item: OutboxMutationEntity)
 
-    @Query("SELECT * FROM outbox_mutations WHERE state IN ('PENDING','FAILED') ORDER BY createdAt LIMIT :limit")
-    suspend fun pending(limit: Int = 100): List<OutboxMutationEntity>
+    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED') ORDER BY createdAt LIMIT :limit")
+    suspend fun pending(userId: String, limit: Int = 100): List<OutboxMutationEntity>
 
     @Query("SELECT * FROM outbox_mutations WHERE mutationId=:id LIMIT 1")
     suspend fun byId(id: String): OutboxMutationEntity?
 
-    @Query("SELECT * FROM outbox_mutations WHERE state='CONFLICT' ORDER BY createdAt")
-    fun observeConflicts(): Flow<List<OutboxMutationEntity>>
+    @Query("SELECT * FROM outbox_mutations WHERE userId=:userId AND state='CONFLICT' ORDER BY createdAt")
+    fun observeConflicts(userId: String): Flow<List<OutboxMutationEntity>>
 
     @Query("UPDATE outbox_mutations SET state=:state, lastError=:error, attempts=attempts+1 WHERE mutationId=:id")
     suspend fun mark(id: String, state: String, error: String? = null)
@@ -117,17 +117,17 @@ interface OutboxDao {
     @Query("DELETE FROM outbox_mutations WHERE mutationId=:id")
     suspend fun delete(id: String)
 
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED','CONFLICT')")
-    fun observePendingCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED','CONFLICT')")
+    fun observePendingCount(userId: String): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED')")
-    fun observePushableCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')")
+    fun observePushableCount(userId: String): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED')")
-    suspend fun pushableCount(): Int
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND state IN ('PENDING','FAILED')")
+    suspend fun pushableCount(userId: String): Int
 
-    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE entityType=:entityType AND entityId=:entityId AND state IN ('PENDING','FAILED','CONFLICT')")
-    suspend fun openCount(entityType: String, entityId: String): Int
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE userId=:userId AND entityType=:entityType AND entityId=:entityId AND state IN ('PENDING','FAILED','CONFLICT')")
+    suspend fun openCount(userId: String, entityType: String, entityId: String): Int
 }
 
 @Dao
