@@ -1,6 +1,7 @@
 package com.dailythread.app
 
 import android.app.Application
+import android.os.Build
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -27,13 +28,27 @@ class DailyThreadApp : Application() {
         }
     }
 
+    val deviceName: String by lazy {
+        listOf(Build.MANUFACTURER, Build.MODEL)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .trim()
+            .ifBlank { "Android device" }
+    }
+
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "daily-thread.db")
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
         tokenStore = TokenStore(this)
-        syncEngine = SyncEngine(db, tokenStore, deviceId)
+        syncEngine = SyncEngine(
+            db = db,
+            tokenStore = tokenStore,
+            deviceId = deviceId,
+            deviceName = deviceName,
+            appVersion = BuildConfig.VERSION_NAME
+        )
         realtime = RealtimeInvalidationClient(tokenStore, syncEngine)
 
         val constraints = Constraints.Builder()
