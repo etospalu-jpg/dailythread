@@ -1,5 +1,6 @@
 package com.dailythread.app.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -121,7 +122,7 @@ data class ReviewEntity(
 )
 data class OutboxMutationEntity(
     @PrimaryKey val mutationId: String,
-    val userId: String,
+    @ColumnInfo(defaultValue = "''") val userId: String,
     val entityType: String,
     val entityId: String,
     val operation: String,
