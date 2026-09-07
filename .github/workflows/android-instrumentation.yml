@@ -34,10 +34,17 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Enable KVM acceleration
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          fi
+
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
 
-      - name: Run Room instrumentation tests
+      - name: Run Room and Keystore instrumentation tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -46,6 +53,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: cd android && gradle :app:connectedDebugAndroidTest --stacktrace
 
       - name: Upload instrumentation reports
