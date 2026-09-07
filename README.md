@@ -1,33 +1,43 @@
 # Daily Thread — Offline-first Full Stack
 
-Daily Thread is being migrated from Google Apps Script + Google Sheets into a native Android application whose local Room database remains usable without internet and synchronizes to Supabase when connectivity returns. A Next.js web dashboard reads the same cloud data through Supabase Auth + Row Level Security.
+Daily Thread is a native Android productivity app migrated from the original Google Apps Script + Google Sheets implementation. The Android app is offline-first: Room remains usable without internet, while Supabase handles cloud synchronization when connectivity returns.
 
 ## Stack
 
 - Android: Kotlin + Jetpack Compose
 - Local data: Room / SQLite
-- Session: DataStore + Android Keystore token encryption
+- Local profile/session: DataStore + Android Keystore token encryption
 - Background sync: WorkManager
-- Cloud: Supabase Auth + PostgreSQL + Edge Functions + Realtime
+- Cloud: Supabase PostgreSQL + anonymous Auth + Edge Functions + Realtime
 - Web dashboard: Next.js
 - CI: GitHub Actions
 - Deployment target: Vercel
 
-## Current state
+## Current Android release candidate
 
-- Android `0.4.0-rc2`: release-candidate testing track
-- In-app account registration + login through Supabase Auth
-- Access/refresh tokens encrypted with Android Keystore AES-GCM
-- Cleartext Android network traffic disabled
+`0.5.0-rc3`
+
+The APK is intentionally **no-login and portrait-first**:
+
+- no email/password screen in the Android app
+- app opens directly into Daily Thread
+- the visible user name can be changed from Profile
+- focus target can be changed from Profile
+- a Supabase anonymous cloud identity is created silently in the background when internet is available
+- local writes always go to Room first and are queued for sync
+- phone layout uses compact 12dp page gutters and portrait orientation
+- launcher artwork uses the Daily Thread DT ribbon mark
+
+Important identity note: because Android now uses anonymous cloud identity, a secure device-pairing mechanism is required before two phones/tablets or the protected web dashboard can intentionally share the same Daily Thread cloud identity. This is the next sync milestone; the app does not reintroduce email/password login.
+
+## Current cloud state
+
 - Supabase `/sync`: Edge Function v5
-- Device heartbeat reports device name, app version, and last-seen time
-- Persistent sync observability through `sync_events`
-- Per-user Room outbox and sync cursor isolation
-- Automatic offline-to-online WorkManager sync scheduling and retry
-- Android CI gates: JVM tests, lint, instrumentation APK compile, debug APK build
-- Emulator instrumentation workflow covers Room isolation and Keystore behavior
-- Web dashboard production build passes in GitHub Actions
-- Vercel production deploy is temporarily blocked by the connected Hobby team's API deployment quota, not by a source build failure
+- device heartbeat reports device name, app version, and last-seen time
+- persistent sync observability through `sync_events`
+- per-user Room outbox and sync cursor isolation
+- automatic offline-to-online WorkManager scheduling and retry
+- service-role credentials are never embedded in the APK
 
 ## Offline flow
 
@@ -51,32 +61,23 @@ Instant local UI          WorkManager when online
                                Room
 ```
 
-## Implemented entities
+## Core features
 
-Focus, Tasks, Activities, Habits, Habit Entries, Daily Review.
+Focus, Tasks, Activities/Timeline, Habits, Habit Entries, Night Review, Focus Timer, Progress, Daily Score, Profile, offline mutation queue, conflict handling, background sync, and Realtime invalidation.
 
-Each local write is committed to Room first and queued for cloud sync. Foreground Supabase Realtime invalidation triggers pull sync, while version conflicts can be resolved by keeping the server copy or retrying the local copy against the latest server version.
-
-Daily Score uses the same rules across Android and web: Focus 40%, Tasks 20%, productive time 20%, Habits 20%; `Istirahat` is excluded from productive minutes.
+Daily Score rules are consistent across Android and web: Focus 40%, Tasks 20%, productive time 20%, Habits 20%; `Istirahat` is excluded from productive minutes.
 
 ## Web dashboard
 
-The `web/` Next.js app includes:
+The `web/` Next.js dashboard build is CI-validated and includes Daily Score, today metrics, device monitoring, and sync-event monitoring. Production deployment is temporarily blocked by the connected Vercel Hobby API deployment quota. The web dashboard is not required to use the Android APK.
 
-- Supabase login
-- Daily Score and today metrics
-- Focus and task overview
-- Night Review snapshot
-- Device name/version/last-seen monitoring
-- Sync history from `sync_events`
-
-The browser uses only the public/publishable Supabase key. It never uses a service-role key.
+Because the Android app is now no-login, web-to-Android identity pairing is intentionally marked as pending rather than silently relying on a different email/password account.
 
 ## Supabase
 
 Project ref: `kmrgpityqzksuqvuqyfv`
 
-## Build Android
+## Android validation
 
 ```bash
 cd android
@@ -92,7 +93,7 @@ For emulator instrumentation tests:
 gradle :app:connectedDebugAndroidTest
 ```
 
-## Build Web
+## Web validation
 
 ```bash
 cd web
