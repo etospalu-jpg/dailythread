@@ -120,6 +120,12 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED','CONFLICT')")
     fun observePendingCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED')")
+    fun observePushableCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM outbox_mutations WHERE state IN ('PENDING','FAILED')")
+    suspend fun pushableCount(): Int
+
     @Query("SELECT COUNT(*) FROM outbox_mutations WHERE entityType=:entityType AND entityId=:entityId AND state IN ('PENDING','FAILED','CONFLICT')")
     suspend fun openCount(entityType: String, entityId: String): Int
 }
