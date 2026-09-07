@@ -24,11 +24,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as DailyThreadApp
-        setContent {
-            DailyThreadTheme {
-                DailyThreadRoot(app)
-            }
-        }
+        setContent { DailyThreadTheme { DailyThreadRoot(app) } }
     }
 }
 
@@ -53,13 +49,17 @@ private fun DailyThreadRoot(app: DailyThreadApp) {
                 busy = true
                 error = null
                 auth.login(email, password)
-                    .onSuccess { userId = it }
+                    .onSuccess {
+                        userId = it
+                        runCatching { app.syncEngine.runOnce() }
+                    }
                     .onFailure { error = it.message ?: "Login gagal" }
                 busy = false
             }
         }
         else -> HomeScreen(app, requireNotNull(userId)) {
             scope.launch {
+                app.realtime.stop()
                 app.tokenStore.clear()
                 userId = null
             }
@@ -77,20 +77,11 @@ private fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String)
                 Text("Daily Thread", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                 Text("Offline-first productivity", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
-                    password,
-                    { password = it },
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(
-                    onClick = { onLogin(email.trim(), password) },
-                    enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(if (busy) "Masuk…" else "Masuk") }
+                Button(onClick = { onLogin(email.trim(), password) }, enabled = !busy && email.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    Text(if (busy) "Masuk…" else "Masuk")
+                }
                 Text("Setelah login pertama, data lokal tetap dapat dibuka tanpa internet.", style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -115,10 +106,13 @@ private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit
     val habits by habitRepo.observeHabits(userId).collectAsState(initial = emptyList())
     val entries by habitRepo.observeEntries(userId, date).collectAsState(initial = emptyList())
     val review by reviewRepo.observe(userId, date).collectAsState(initial = null)
-    val pending by app.db.outboxDao().observePendingCount().collectAsState(initial = 0)
-    val conflicts by app.db.outboxDao().observeConflicts().collectAsState(initial = emptyList())
+    val pending by app.db.outboxDao().observePendingCount(userId).collectAsState(initial = 0)
+    val conflicts by app.db.outboxDao().observeConflicts(userId).collectAsState(initial = emptyList())
 
-    LaunchedEffect(userId) { app.realtime.start() }
+    LaunchedEffect(userId) {
+        app.realtime.start()
+        runCatching { app.syncEngine.runOnce() }
+    }
     DisposableEffect(userId) { onDispose { app.realtime.stop() } }
 
     val score = remember(focus, tasks, activities, habits, entries) {
@@ -139,12 +133,7 @@ private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { tab = item },
-                        icon = { Text(item.title.take(1), fontWeight = FontWeight.Bold) },
-                        label = { Text(item.title) }
-                    )
+                    NavigationBarItem(selected = tab == item, onClick = { tab = item }, icon = { Text(item.title.take(1), fontWeight = FontWeight.Bold) }, label = { Text(item.title) })
                 }
             }
         }
@@ -153,14 +142,7 @@ private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit
             Tab.TODAY -> TodayScreen(Modifier.padding(padding), score, focus, tasks, habits, entries, focusRepo, taskRepo, habitRepo)
             Tab.TIMELINE -> TimelineScreen(Modifier.padding(padding), activities, activityRepo)
             Tab.REVIEW -> ReviewScreen(Modifier.padding(padding), score, review, reviewRepo)
-            Tab.SYNC -> SyncScreen(
-                modifier = Modifier.padding(padding),
-                pending = pending,
-                conflicts = conflicts,
-                onSync = { app.syncEngine.runOnce() },
-                onKeepServer = { app.syncEngine.resolveKeepServer(it) },
-                onKeepMine = { app.syncEngine.resolveKeepMine(it) }
-            )
+            Tab.SYNC -> SyncScreen(Modifier.padding(padding), pending, conflicts, { app.syncEngine.runOnce() }, { app.syncEngine.resolveKeepServer(it) }, { app.syncEngine.resolveKeepMine(it) })
         }
     }
 }
@@ -197,34 +179,17 @@ private fun TodayScreen(
 
         item { SectionTitle("3 Fokus Utama", "${focus.size}/3") }
         items(focus, key = { it.id }) { item ->
-            SimpleRow(
-                title = item.title,
-                subtitle = "${item.estimateMinutes} menit · ${item.status}",
-                checked = item.status == "COMPLETED",
-                onChecked = { scope.launch { focusRepo.setStatus(item.id, if (it) "COMPLETED" else "PLANNED") } },
-                onDelete = { scope.launch { focusRepo.delete(item.id) } }
-            )
+            SimpleRow(item.title, "${item.estimateMinutes} menit · ${item.status}", item.status == "COMPLETED", { scope.launch { focusRepo.setStatus(item.id, if (it) "COMPLETED" else "PLANNED") } }, { scope.launch { focusRepo.delete(item.id) } })
         }
         if (focus.size < 3) item {
             InlineAdd("Tambah fokus", focusName, { focusName = it }) {
-                scope.launch {
-                    runCatching { focusRepo.add(focusName) }
-                        .onSuccess { focusName = "" }
-                        .onFailure { message = it.message }
-                }
+                scope.launch { runCatching { focusRepo.add(focusName) }.onSuccess { focusName = "" }.onFailure { message = it.message } }
             }
         }
 
         item { SectionTitle("Tasks", "${tasks.count { it.status == "DONE" }}/${tasks.size}") }
         items(tasks, key = { it.id }) { item ->
-            SimpleRow(
-                item.title,
-                "${item.priority} · ${item.status}",
-                item.status == "DONE",
-                { scope.launch { taskRepo.toggleDone(item.id) } },
-                { scope.launch { taskRepo.delete(item.id) } },
-                extra = { TextButton(onClick = { scope.launch { taskRepo.moveToTomorrow(item.id) } }) { Text("Besok") } }
-            )
+            SimpleRow(item.title, "${item.priority} · ${item.status}", item.status == "DONE", { scope.launch { taskRepo.toggleDone(item.id) } }, { scope.launch { taskRepo.delete(item.id) } }, extra = { TextButton(onClick = { scope.launch { taskRepo.moveToTomorrow(item.id) } }) { Text("Besok") } })
         }
         item {
             InlineAdd("Tambah task", taskName, { taskName = it }) {
@@ -234,13 +199,7 @@ private fun TodayScreen(
 
         item { SectionTitle("Habits", "${entries.count { it.completed }}/${habits.size}") }
         items(habits, key = { it.id }) { habit ->
-            SimpleRow(
-                habit.name,
-                "Habit harian",
-                entryMap[habit.id]?.completed == true,
-                { checked -> scope.launch { habitRepo.setCompleted(habit.id, checked) } },
-                { scope.launch { habitRepo.delete(habit.id) } }
-            )
+            SimpleRow(habit.name, "Habit harian", entryMap[habit.id]?.completed == true, { checked -> scope.launch { habitRepo.setCompleted(habit.id, checked) } }, { scope.launch { habitRepo.delete(habit.id) } })
         }
         item {
             InlineAdd("Tambah habit", habitName, { habitName = it }) {
@@ -319,7 +278,7 @@ private fun SyncScreen(
             }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Sinkronisasi…" else "Sinkronkan sekarang") }
         }
         message?.let { item { Text(it) } }
-        item { Text("Realtime aktif saat aplikasi dibuka. WorkManager menjadi fallback ketika aplikasi berada di background.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Perubahan lokal akan otomatis dijadwalkan untuk sinkron saat jaringan tersedia. Realtime aktif ketika aplikasi terbuka.", style = MaterialTheme.typography.bodySmall) }
 
         if (conflicts.isNotEmpty()) {
             item { Text("Konflik data", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
@@ -329,10 +288,7 @@ private fun SyncScreen(
                         Text(conflict.entityType.replace('_', ' ').uppercase(), fontWeight = FontWeight.SemiBold)
                         Text(conflict.lastError ?: "Perubahan lokal dan server berbeda.", style = MaterialTheme.typography.bodySmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { scope.launch { onKeepServer(conflict.mutationId) } },
-                                enabled = conflict.serverPayloadJson != null
-                            ) { Text("Pakai server") }
+                            OutlinedButton(onClick = { scope.launch { onKeepServer(conflict.mutationId) } }, enabled = conflict.serverPayloadJson != null) { Text("Pakai server") }
                             Button(onClick = { scope.launch { onKeepMine(conflict.mutationId) } }) { Text("Pakai lokal") }
                         }
                     }
