@@ -5,7 +5,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "daily_thread_session")
 
@@ -24,6 +27,10 @@ class TokenStore(private val context: Context) {
             it[expiresAtKey] = expiresAt
         }
     }
+
+    fun userIdFlow(): Flow<String?> = context.dataStore.data
+        .map { it[userKey] }
+        .distinctUntilChanged()
 
     suspend fun accessToken(): String? = context.dataStore.data.first()[accessKey]
     suspend fun refreshToken(): String? = context.dataStore.data.first()[refreshKey]
