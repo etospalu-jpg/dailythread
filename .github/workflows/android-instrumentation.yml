@@ -12,6 +12,10 @@ on:
       - '.github/workflows/android-instrumentation.yml'
   workflow_dispatch:
 
+concurrency:
+  group: android-instrumentation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   instrumented-tests:
     runs-on: ubuntu-latest
