@@ -13,12 +13,21 @@ import com.dailythread.app.sync.SyncWorker
 import com.dailythread.app.sync.RealtimeInvalidationClient
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 class DailyThreadApp : Application() {
     lateinit var db: AppDatabase
     lateinit var tokenStore: TokenStore
     lateinit var syncEngine: SyncEngine
     lateinit var realtime: RealtimeInvalidationClient
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val deviceId: String by lazy {
         getSharedPreferences("device", MODE_PRIVATE).let { prefs ->
@@ -54,14 +63,33 @@ class DailyThreadApp : Application() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+
+        val periodic = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "daily-thread-sync",
             ExistingPeriodicWorkPolicy.KEEP,
-            request
+            periodic
         )
+
+        applicationScope.launch {
+            db.outboxDao().observePushableCount()
+                .distinctUntilChanged()
+                .collectLatest { count ->
+                    if (count <= 0) return@collectLatest
+                    delay(750)
+                    val immediate = OneTimeWorkRequestBuilder<SyncWorker>()
+                        .setConstraints(constraints)
+                        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+                        .build()
+                    WorkManager.getInstance(this@DailyThreadApp).enqueueUniqueWork(
+                        "daily-thread-sync-now",
+                        ExistingWorkPolicy.KEEP,
+                        immediate
+                    )
+                }
+        }
     }
 
     companion object {
