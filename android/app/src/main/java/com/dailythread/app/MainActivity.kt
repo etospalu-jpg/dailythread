@@ -18,7 +18,6 @@ import com.dailythread.app.data.repository.*
 import com.dailythread.app.domain.DailyScoreCalculator
 import com.dailythread.app.ui.theme.DailyThreadTheme
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,6 +35,7 @@ private fun DailyThreadRoot(app: DailyThreadApp) {
     var booting by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         userId = app.tokenStore.userId()
@@ -44,19 +44,43 @@ private fun DailyThreadRoot(app: DailyThreadApp) {
 
     when {
         booting -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        userId == null -> LoginScreen(busy, error) { email, password ->
-            scope.launch {
-                busy = true
-                error = null
-                auth.login(email, password)
-                    .onSuccess {
-                        userId = it
-                        runCatching { app.syncEngine.runOnce() }
-                    }
-                    .onFailure { error = it.message ?: "Login gagal" }
-                busy = false
+        userId == null -> LoginScreen(
+            busy = busy,
+            error = error,
+            info = info,
+            onLogin = { email, password ->
+                scope.launch {
+                    busy = true
+                    error = null
+                    info = null
+                    auth.login(email, password)
+                        .onSuccess {
+                            userId = it
+                            runCatching { app.syncEngine.runOnce() }
+                        }
+                        .onFailure { error = it.message ?: "Login gagal" }
+                    busy = false
+                }
+            },
+            onSignup = { email, password ->
+                scope.launch {
+                    busy = true
+                    error = null
+                    info = null
+                    auth.signup(email, password)
+                        .onSuccess { result ->
+                            if (result.sessionReady) {
+                                userId = result.userId
+                                runCatching { app.syncEngine.runOnce() }
+                            } else {
+                                info = "Akun dibuat. Cek email untuk konfirmasi, lalu masuk dengan akun tersebut."
+                            }
+                        }
+                        .onFailure { error = it.message ?: "Pendaftaran gagal" }
+                    busy = false
+                }
             }
-        }
+        )
         else -> HomeScreen(app, requireNotNull(userId)) {
             scope.launch {
                 app.realtime.stop()
@@ -68,19 +92,84 @@ private fun DailyThreadRoot(app: DailyThreadApp) {
 }
 
 @Composable
-private fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit) {
+private fun LoginScreen(
+    busy: Boolean,
+    error: String?,
+    info: String?,
+    onLogin: (String, String) -> Unit,
+    onSignup: (String, String) -> Unit
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var creatingAccount by remember { mutableStateOf(false) }
+
+    val canSubmit = email.isNotBlank() && password.isNotBlank() &&
+        (!creatingAccount || (password.length >= 6 && password == confirmPassword))
+
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Daily Thread", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Text("Offline-first productivity", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                Text(
+                    if (creatingAccount) "Buat akun untuk mulai sinkronisasi cloud." else "Offline-first productivity",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    email,
+                    { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    password,
+                    { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (creatingAccount) {
+                    OutlinedTextField(
+                        confirmPassword,
+                        { confirmPassword = it },
+                        label = { Text("Ulangi password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = confirmPassword.isNotEmpty() && confirmPassword != password
+                    )
+                    Text("Password minimal 6 karakter.", style = MaterialTheme.typography.bodySmall)
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = { onLogin(email.trim(), password) }, enabled = !busy && email.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                    Text(if (busy) "Masuk…" else "Masuk")
+                info?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                Button(
+                    onClick = {
+                        if (creatingAccount) onSignup(email.trim(), password)
+                        else onLogin(email.trim(), password)
+                    },
+                    enabled = !busy && canSubmit,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        when {
+                            busy && creatingAccount -> "Membuat akun…"
+                            busy -> "Masuk…"
+                            creatingAccount -> "Buat akun"
+                            else -> "Masuk"
+                        }
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        creatingAccount = !creatingAccount
+                        confirmPassword = ""
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text(if (creatingAccount) "Sudah punya akun? Masuk" else "Belum punya akun? Buat akun")
                 }
                 Text("Setelah login pertama, data lokal tetap dapat dibuka tanpa internet.", style = MaterialTheme.typography.bodySmall)
             }
@@ -93,7 +182,7 @@ private enum class Tab(val title: String) { TODAY("Today"), TIMELINE("Timeline")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(app: DailyThreadApp, userId: String, onLogout: () -> Unit) {
-    val date = remember { LocalDate.now() }
+    val date = remember { today() }
     val focusRepo = remember { FocusRepository(app.db, app.tokenStore, app.deviceId) }
     val taskRepo = remember { TaskRepository(app.db, app.tokenStore, app.deviceId) }
     val activityRepo = remember { ActivityRepository(app.db, app.tokenStore, app.deviceId) }
