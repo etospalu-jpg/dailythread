@@ -11,10 +11,21 @@ Current cloud migration history:
 5. `0005_fk_indexes`
 6. `0006_activity_category_policy_hardening`
 7. `0007_activity_category_policy_cleanup`
+8. `0008_sync_observability`
 
 Edge Functions:
-- `sync` version 3, JWT verification enabled.
-- v3 returns server entities for unique/version conflicts so Android can resolve them safely.
+- `sync` version 5, JWT verification enabled.
+- Push mutations are idempotent through `sync_mutations`.
+- Pull uses per-user `change_log` cursors.
+- Unique/version conflicts return the latest server entity for explicit client resolution.
+- v5 records PUSH/PULL observability in `sync_events`.
+- v5 device heartbeat records device name, app version, platform, and last-seen time.
 
-Security advisor after current changes: no security lints.
-Performance advisor: only unused-index informational notices remain, expected on a new/empty project.
+Security posture:
+- Row Level Security is enabled on application tables.
+- Sync forces ownership from the verified JWT user; client-provided `user_id` cannot override ownership.
+- Android `0.4.0-rc1` also scopes its local outbox and sync cursor per user to prevent cross-account mutation replay after account switching.
+- Service-role credentials are never embedded in the APK or web dashboard.
+
+Security Advisor after v5 deployment: no security lints.
+Performance Advisor currently reports only unused-index informational notices, expected while the production dataset is still new/empty.
