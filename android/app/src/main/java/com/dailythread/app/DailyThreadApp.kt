@@ -19,6 +19,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 class DailyThreadApp : Application() {
@@ -48,7 +50,7 @@ class DailyThreadApp : Application() {
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "daily-thread.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
         tokenStore = TokenStore(this)
         syncEngine = SyncEngine(
@@ -74,7 +76,11 @@ class DailyThreadApp : Application() {
         )
 
         applicationScope.launch {
-            db.outboxDao().observePushableCount()
+            tokenStore.userIdFlow()
+                .flatMapLatest { userId ->
+                    if (userId.isNullOrBlank()) flowOf(0)
+                    else db.outboxDao().observePushableCount(userId)
+                }
                 .distinctUntilChanged()
                 .collectLatest { count ->
                     if (count <= 0) return@collectLatest
@@ -107,6 +113,26 @@ class DailyThreadApp : Application() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE outbox_mutations ADD COLUMN serverVersion INTEGER")
                 db.execSQL("ALTER TABLE outbox_mutations ADD COLUMN serverPayloadJson TEXT")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outbox_mutations ADD COLUMN userId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("""
+                    UPDATE outbox_mutations
+                    SET userId = CASE entityType
+                        WHEN 'focus_item' THEN COALESCE((SELECT userId FROM focus_items WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        WHEN 'task' THEN COALESCE((SELECT userId FROM tasks WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        WHEN 'activity' THEN COALESCE((SELECT userId FROM activities WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        WHEN 'habit' THEN COALESCE((SELECT userId FROM habits WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        WHEN 'habit_entry' THEN COALESCE((SELECT userId FROM habit_entries WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        WHEN 'daily_review' THEN COALESCE((SELECT userId FROM daily_reviews WHERE id = outbox_mutations.entityId LIMIT 1), '')
+                        ELSE ''
+                    END
+                """.trimIndent())
+                db.execSQL("DELETE FROM outbox_mutations WHERE userId = ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_outbox_mutations_userId_state ON outbox_mutations(userId, state)")
             }
         }
     }
