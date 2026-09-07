@@ -12,7 +12,9 @@ import com.google.gson.JsonObject
 class SyncEngine(
     private val db: AppDatabase,
     private val tokenStore: TokenStore,
-    private val deviceId: String
+    private val deviceId: String,
+    private val deviceName: String,
+    private val appVersion: String
 ) {
     private val gson = Gson()
     private val auth = AuthRepository(tokenStore)
@@ -69,7 +71,12 @@ class SyncEngine(
         }
         val response = ApiFactory.sync.push(
             authorization = "Bearer $token",
-            request = PushRequest(mutations = body)
+            request = PushRequest(
+                deviceId = deviceId,
+                deviceName = deviceName,
+                appVersion = appVersion,
+                mutations = body
+            )
         )
         response.results.forEach { result ->
             when (result.status) {
@@ -91,7 +98,12 @@ class SyncEngine(
         do {
             val response = ApiFactory.sync.pull(
                 authorization = "Bearer $token",
-                request = PullRequest(cursor = cursor, deviceId = deviceId)
+                request = PullRequest(
+                    cursor = cursor,
+                    deviceId = deviceId,
+                    deviceName = deviceName,
+                    appVersion = appVersion
+                )
             )
             db.withTransaction {
                 response.changes.forEach { applyChange(it) }
