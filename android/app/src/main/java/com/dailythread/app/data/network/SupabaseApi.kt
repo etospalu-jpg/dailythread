@@ -15,6 +15,13 @@ interface SupabaseAuthApi {
     ): AuthResponse
 
     @Headers("Content-Type: application/json")
+    @POST("auth/v1/signup")
+    suspend fun signup(
+        @Header("apikey") apiKey: String = BuildConfig.SUPABASE_PUBLISHABLE_KEY,
+        @Body request: SignupRequest
+    ): SignupResponse
+
+    @Headers("Content-Type: application/json")
     @POST("auth/v1/token?grant_type=refresh_token")
     suspend fun refresh(
         @Header("apikey") apiKey: String = BuildConfig.SUPABASE_PUBLISHABLE_KEY,
