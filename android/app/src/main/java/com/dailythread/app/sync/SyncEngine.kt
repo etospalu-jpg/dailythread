@@ -20,13 +20,16 @@ class SyncEngine(
     private val auth = AuthRepository(tokenStore)
 
     suspend fun runOnce() {
+        val userId = tokenStore.userId() ?: return
         val token = auth.validAccessToken() ?: return
-        push(token)
-        pull(token)
+        push(token, userId)
+        pull(token, userId)
     }
 
     suspend fun resolveKeepServer(mutationId: String) {
+        val userId = tokenStore.userId() ?: return
         val conflict = db.outboxDao().byId(mutationId) ?: return
+        if (conflict.userId != userId) return
         val payloadJson = conflict.serverPayloadJson ?: return
         val payload = gson.fromJson(payloadJson, JsonObject::class.java)
         db.withTransaction {
@@ -42,7 +45,9 @@ class SyncEngine(
     }
 
     suspend fun resolveKeepMine(mutationId: String) {
+        val userId = tokenStore.userId() ?: return
         val conflict = db.outboxDao().byId(mutationId) ?: return
+        if (conflict.userId != userId) return
         if (conflict.lastError == "not_found") {
             if (conflict.operation == "DELETE") {
                 db.outboxDao().delete(mutationId)
@@ -55,8 +60,8 @@ class SyncEngine(
         runOnce()
     }
 
-    private suspend fun push(token: String) {
-        val pending = db.outboxDao().pending(100)
+    private suspend fun push(token: String, userId: String) {
+        val pending = db.outboxDao().pending(userId, 100)
         if (pending.isEmpty()) return
         val body = pending.map {
             SyncMutationDto(
@@ -79,6 +84,8 @@ class SyncEngine(
             )
         )
         response.results.forEach { result ->
+            val local = db.outboxDao().byId(result.mutationId)
+            if (local?.userId != userId) return@forEach
             when (result.status) {
                 "SYNCED" -> db.outboxDao().delete(result.mutationId)
                 "CONFLICT" -> db.outboxDao().markConflict(
@@ -92,8 +99,9 @@ class SyncEngine(
         }
     }
 
-    private suspend fun pull(token: String) {
-        var cursor = db.syncMetaDao().get("cursor")?.toLongOrNull() ?: 0L
+    private suspend fun pull(token: String, userId: String) {
+        val cursorKey = "cursor:$userId"
+        var cursor = db.syncMetaDao().get(cursorKey)?.toLongOrNull() ?: 0L
         var more: Boolean
         do {
             val response = ApiFactory.sync.pull(
@@ -106,17 +114,19 @@ class SyncEngine(
                 )
             )
             db.withTransaction {
-                response.changes.forEach { applyChange(it) }
+                response.changes.forEach { applyChange(userId, it) }
                 cursor = response.nextCursor
-                db.syncMetaDao().put(SyncMetaEntity("cursor", cursor.toString()))
+                db.syncMetaDao().put(SyncMetaEntity(cursorKey, cursor.toString()))
             }
             more = response.hasMore
         } while (more)
     }
 
-    private suspend fun applyChange(change: ChangeDto) {
-        if (db.outboxDao().openCount(change.entityType, change.entityId) > 0) return
+    private suspend fun applyChange(userId: String, change: ChangeDto) {
+        if (db.outboxDao().openCount(userId, change.entityType, change.entityId) > 0) return
         val payload = change.payload ?: return
+        val payloadUserId = if (payload.has("user_id") && !payload.get("user_id").isJsonNull) payload.get("user_id").asString else null
+        if (payloadUserId != userId) return
         applyServerEntity(change.entityType, change.entityId, change.version, change.changedAt, payload)
     }
 
