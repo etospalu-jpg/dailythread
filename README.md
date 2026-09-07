@@ -1,6 +1,6 @@
 # Daily Thread — Offline-first Full Stack
 
-Daily Thread is being migrated from Google Apps Script + Google Sheets into a native Android application whose local Room database remains usable without internet and synchronizes to Supabase when connectivity returns. A Next.js web dashboard now reads the same cloud data through Supabase Auth + Row Level Security.
+Daily Thread is being migrated from Google Apps Script + Google Sheets into a native Android application whose local Room database remains usable without internet and synchronizes to Supabase when connectivity returns. A Next.js web dashboard reads the same cloud data through Supabase Auth + Row Level Security.
 
 ## Stack
 
@@ -15,9 +15,14 @@ Daily Thread is being migrated from Google Apps Script + Google Sheets into a na
 
 ## Current state
 
-- Android `0.3.0`: realtime + conflict resolution foundation
-- Supabase `/sync`: Edge Function v4 with persistent sync observability
-- Phase 7: web dashboard + automation in progress
+- Android `0.4.0-rc1`: release-candidate testing track
+- Supabase `/sync`: Edge Function v5
+- Device heartbeat now reports device name, app version, and last-seen time
+- Persistent sync observability through `sync_events`
+- Android CI gates: JVM tests, lint, instrumentation APK compile, debug APK build
+- Emulator instrumentation test workflow added for Room/offline/conflict behavior
+- Web dashboard production build passes in GitHub Actions
+- Vercel production deploy is temporarily blocked by the Hobby API deployment quota, not by a source build failure
 
 ## Offline flow
 
@@ -45,16 +50,19 @@ Instant local UI       WorkManager when online
 
 Focus, Tasks, Activities, Habits, Habit Entries, Daily Review.
 
-Each local write is committed to Room first and queued for cloud sync in the same Room transaction. Foreground Supabase Realtime invalidation triggers pull sync, while version conflicts can be resolved by keeping the server copy or retrying the local copy against the latest server version.
+Each local write is committed to Room first and queued for cloud sync. Foreground Supabase Realtime invalidation triggers pull sync, while version conflicts can be resolved by keeping the server copy or retrying the local copy against the latest server version.
+
+Daily Score uses the same rules across Android and web: Focus 40%, Tasks 20%, productive time 20%, Habits 20%; `Istirahat` is excluded from productive minutes.
 
 ## Web dashboard
 
 The `web/` Next.js app includes:
+
 - Supabase login
 - Daily Score and today metrics
 - Focus and task overview
 - Night Review snapshot
-- Device last-seen monitoring
+- Device name/version/last-seen monitoring
 - Sync history from `sync_events`
 
 The browser uses only the public/publishable Supabase key. It never uses a service-role key.
@@ -68,7 +76,15 @@ Project ref: `kmrgpityqzksuqvuqyfv`
 ```bash
 cd android
 gradle :app:testDebugUnitTest
+gradle :app:lintDebug
+gradle :app:assembleDebugAndroidTest
 gradle :app:assembleDebug
+```
+
+For emulator instrumentation tests:
+
+```bash
+gradle :app:connectedDebugAndroidTest
 ```
 
 ## Build Web
@@ -79,6 +95,4 @@ npm install
 npm run build
 ```
 
-GitHub Actions validates both Android and web builds.
-
-See `docs/PHASE_STATUS.md`, `docs/CLOUD_STATE.md`, and `docs/WEB_DASHBOARD.md`.
+GitHub Actions validates Android and web builds. See `docs/PHASE_STATUS.md`, `docs/CLOUD_STATE.md`, `docs/WEB_DASHBOARD.md`, and `docs/TEST_MATRIX.md`.
