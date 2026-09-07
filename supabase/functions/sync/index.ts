@@ -64,6 +64,37 @@ async function touchDevice(userId: string, deviceId: string | null) {
   }, { onConflict: "id" });
 }
 
+async function recordSyncEvent(input: {
+  userId: string;
+  deviceId?: string | null;
+  direction: "PUSH" | "PULL";
+  status: "SUCCESS" | "PARTIAL" | "FAILED" | "CONFLICT";
+  mutationCount?: number;
+  syncedCount?: number;
+  conflictCount?: number;
+  failedCount?: number;
+  cursorFrom?: number | null;
+  cursorTo?: number | null;
+  durationMs: number;
+  errorCode?: string | null;
+}) {
+  const { error } = await admin.from("sync_events").insert({
+    user_id: input.userId,
+    device_id: input.deviceId ?? null,
+    direction: input.direction,
+    status: input.status,
+    mutation_count: input.mutationCount ?? 0,
+    synced_count: input.syncedCount ?? 0,
+    conflict_count: input.conflictCount ?? 0,
+    failed_count: input.failedCount ?? 0,
+    cursor_from: input.cursorFrom ?? null,
+    cursor_to: input.cursorTo ?? null,
+    duration_ms: Math.max(0, Math.round(input.durationMs)),
+    error_code: input.errorCode ?? null,
+  });
+  if (error) console.error("sync_event_insert_failed", error.message);
+}
+
 async function processMutation(userId: string, mutation: any) {
   const mutationId = String(mutation?.mutation_id || "");
   const entityType = String(mutation?.entity_type || "");
@@ -228,22 +259,68 @@ Deno.serve(async (req: Request) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
 
+  const action = String(body?.action || "").toLowerCase();
+  const started = performance.now();
+  const deviceId = body?.device_id ? String(body.device_id) : null;
+
   try {
-    const action = String(body?.action || "").toLowerCase();
     if (action === "push") {
       const mutations = Array.isArray(body?.mutations) ? body.mutations.slice(0, 100) : [];
       const results = [];
       for (const mutation of mutations) results.push(await processMutation(user.id, mutation));
+
+      const synced = results.filter((r: any) => r.status === "SYNCED").length;
+      const conflicts = results.filter((r: any) => r.status === "CONFLICT").length;
+      const failed = results.filter((r: any) => r.status === "FAILED").length;
+      const status = failed > 0 ? (synced > 0 || conflicts > 0 ? "PARTIAL" : "FAILED") : conflicts > 0 ? "CONFLICT" : "SUCCESS";
+
+      await recordSyncEvent({
+        userId: user.id,
+        deviceId: deviceId || (mutations[0]?.device_id ? String(mutations[0].device_id) : null),
+        direction: "PUSH",
+        status,
+        mutationCount: mutations.length,
+        syncedCount: synced,
+        conflictCount: conflicts,
+        failedCount: failed,
+        durationMs: performance.now() - started,
+        errorCode: failed > 0 ? "mutation_failed" : conflicts > 0 ? "mutation_conflict" : null,
+      });
+
       return json({ ok: true, results });
     }
+
     if (action === "pull") {
-      await touchDevice(user.id, body?.device_id ? String(body.device_id) : null);
-      const result = await pullChanges(user.id, Number(body?.cursor || 0), Number(body?.limit || 200));
+      await touchDevice(user.id, deviceId);
+      const cursorFrom = Math.max(0, Number(body?.cursor || 0));
+      const result = await pullChanges(user.id, cursorFrom, Number(body?.limit || 200));
+      await recordSyncEvent({
+        userId: user.id,
+        deviceId,
+        direction: "PULL",
+        status: "SUCCESS",
+        mutationCount: result.changes.length,
+        syncedCount: result.changes.length,
+        cursorFrom,
+        cursorTo: result.next_cursor,
+        durationMs: performance.now() - started,
+      });
       return json({ ok: true, ...result });
     }
+
     return json({ error: "invalid_action" }, 400);
   } catch (error) {
     console.error(error);
+    if (action === "push" || action === "pull") {
+      await recordSyncEvent({
+        userId: user.id,
+        deviceId,
+        direction: action === "push" ? "PUSH" : "PULL",
+        status: "FAILED",
+        durationMs: performance.now() - started,
+        errorCode: error instanceof Error ? error.message.slice(0, 180) : "internal_error",
+      });
+    }
     return json({ error: "internal_error" }, 500);
   }
 });
